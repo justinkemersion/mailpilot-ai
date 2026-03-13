@@ -41,6 +41,13 @@ class Classifier(Protocol):
     ) -> ClassifiedEmail: ...
 
 
+class ClassificationError(Exception):
+    """
+    Raised when the classifier cannot safely determine a category
+    (e.g. API timeout, malformed response).
+    """
+
+
 SYSTEM_PROMPT = """
 You are an AI email triage assistant for a power user.
 
@@ -118,18 +125,16 @@ class OpenAIClassifier:
                 text = chat.choices[0].message.content or ""
         except Exception as exc:  # network or API error
             logger.error("OpenAI classification failed: %s", exc)
-            return ClassifiedEmail(category="important", confidence=None, rationale=None)
+            raise ClassificationError("OpenAI classification failed") from exc
 
         try:
             payload = json.loads(text)
-            category = payload.get("category", "important")
+            category = payload.get("category")
             confidence = payload.get("confidence")
             rationale = payload.get("rationale")
         except Exception as exc:
             logger.error("Failed to parse OpenAI classifier response: %s; raw=%s", exc, text)
-            category = "important"
-            confidence = None
-            rationale = None
+            raise ClassificationError("Failed to parse classifier response") from exc
 
         if category not in [
             "important",
@@ -140,7 +145,7 @@ class OpenAIClassifier:
             "personal",
             "spam",
         ]:
-            logger.warning("Model returned unknown category %s; defaulting to important", category)
-            category = "important"
+            logger.warning("Model returned unknown category %s; treating as classification failure", category)
+            raise ClassificationError(f"Unknown category returned: {category}")
 
         return ClassifiedEmail(category=category, confidence=confidence, rationale=rationale)

@@ -50,6 +50,72 @@ def get_openai_model_name() -> str:
     return os.getenv("MAILPILOT_OPENAI_MODEL", "gpt-4.1-mini")
 
 
+def get_safe_sender_domains() -> list[str]:
+    """
+    Return the configured safe sender domains as a lowercased list.
+
+    Read from MAILPILOT_SAFE_SENDER_DOMAINS (comma-separated), e.g.:
+    MAILPILOT_SAFE_SENDER_DOMAINS=mycompany.com,bank.com
+    """
+    _load_dotenv()
+    raw = os.getenv("MAILPILOT_SAFE_SENDER_DOMAINS", "")
+    return [d.strip().lower() for d in raw.split(",") if d.strip()]
+
+
+def get_safe_senders() -> list[str]:
+    """
+    Return the configured exact safe sender email addresses as a lowercased list.
+
+    Read from MAILPILOT_SAFE_SENDERS (comma-separated), e.g.:
+    MAILPILOT_SAFE_SENDERS=boss@example.com,billing@bank.com
+    """
+    _load_dotenv()
+    raw = os.getenv("MAILPILOT_SAFE_SENDERS", "")
+    return [s.strip().lower() for s in raw.split(",") if s.strip()]
+
+
+def get_max_archives_per_run() -> int:
+    """
+    Return the maximum number of archive actions allowed per run.
+
+    Controlled by MAILPILOT_MAX_ARCHIVES_PER_RUN (default: 30).
+    """
+    _load_dotenv()
+    raw = os.getenv("MAILPILOT_MAX_ARCHIVES_PER_RUN", "30")
+    try:
+        return int(raw)
+    except ValueError:
+        return 30
+
+
+def get_max_spam_marks_per_run() -> int:
+    """
+    Return the maximum number of spam mark actions allowed per run.
+
+    Controlled by MAILPILOT_MAX_SPAM_MARKS_PER_RUN (default: 10).
+    """
+    _load_dotenv()
+    raw = os.getenv("MAILPILOT_MAX_SPAM_MARKS_PER_RUN", "10")
+    try:
+        return int(raw)
+    except ValueError:
+        return 10
+
+
+def get_max_label_actions_per_run() -> int:
+    """
+    Return the maximum number of label modifications allowed per run.
+
+    Controlled by MAILPILOT_MAX_LABEL_ACTIONS_PER_RUN (default: 200).
+    """
+    _load_dotenv()
+    raw = os.getenv("MAILPILOT_MAX_LABEL_ACTIONS_PER_RUN", "200")
+    try:
+        return int(raw)
+    except ValueError:
+        return 200
+
+
 def load_config() -> MailPilotConfig:
     """
     Build a MailPilotConfig from environment variables.

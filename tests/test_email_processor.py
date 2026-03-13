@@ -68,6 +68,7 @@ def test_apply_actions_for_newsletters_archives_and_labels():
         msg_id="msg-1",
         labels_map=labels_map,
         category="newsletters",
+        is_safe_sender=False,
     )
 
     assert dummy_gmail.archived == [(account.email, "msg-1")]
@@ -86,6 +87,7 @@ def test_apply_actions_for_important_flags_and_labels():
         msg_id="msg-2",
         labels_map=labels_map,
         category="important",
+        is_safe_sender=False,
     )
 
     assert dummy_gmail.flagged == [(account.email, "msg-2")]

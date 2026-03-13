@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import logging
+from email.utils import parseaddr
 from typing import List
 
-from .ai_classifier import Classifier, OpenAIClassifier
+from .ai_classifier import ClassificationError, Classifier, OpenAIClassifier
+from .config import (
+    get_max_archives_per_run,
+    get_max_label_actions_per_run,
+    get_max_spam_marks_per_run,
+    get_safe_sender_domains,
+    get_safe_senders,
+)
 from .database import (
     AccountRepository,
     ProcessedEmailRepository,
     connection_ctx,
 )
-from .gmail_client import GmailClient
+from .gmail_client import GmailClient, SafeGmailClient
 from .models import Account
 
 
@@ -25,18 +33,44 @@ class EmailProcessor:
         self,
         gmail_client: GmailClient | None = None,
         classifier: Classifier | None = None,
-        max_archives_per_run: int = 50,
-        max_spam_marks_per_run: int = 20,
+        max_archives_per_run: int | None = None,
+        max_spam_marks_per_run: int | None = None,
         search_query: str | None = "is:unread",
     ) -> None:
-        self._gmail_client = gmail_client or GmailClient()
+        base_client = gmail_client or GmailClient()
+        self._gmail_client = SafeGmailClient(base_client)
         self._classifier = classifier or OpenAIClassifier()
-        self._max_archives_per_run = max_archives_per_run
-        self._max_spam_marks_per_run = max_spam_marks_per_run
+        self._max_archives_per_run = (
+            max_archives_per_run if max_archives_per_run is not None else get_max_archives_per_run()
+        )
+        self._max_spam_marks_per_run = (
+            max_spam_marks_per_run if max_spam_marks_per_run is not None else get_max_spam_marks_per_run()
+        )
+        self._max_label_actions_per_run = get_max_label_actions_per_run()
         self._archives_this_run = 0
         self._spam_marks_this_run = 0
+        self._label_actions_this_run = 0
         self._dry_run = False
         self._search_query = search_query
+        # Preload safe sender configuration from environment.
+        self._safe_sender_domains = set(get_safe_sender_domains())
+        self._safe_senders = set(get_safe_senders())
+
+    def _is_safe_sender(self, sender: str | None) -> bool:
+        if not sender:
+            return False
+        # Extract email address from "Name <email@example.com>" style headers.
+        _, addr = parseaddr(sender)
+        addr = (addr or "").lower()
+        if not addr:
+            return False
+        if addr in self._safe_senders:
+            return True
+        if "@" in addr:
+            domain = addr.split("@", 1)[1]
+            if domain in self._safe_sender_domains:
+                return True
+        return False
 
     def enable_dry_run(self) -> None:
         """
@@ -48,6 +82,7 @@ class EmailProcessor:
         # Reset per-run counters for rate limiting
         self._archives_this_run = 0
         self._spam_marks_this_run = 0
+        self._label_actions_this_run = 0
         with connection_ctx() as conn:
             account_repo = AccountRepository(conn)
             processed_repo = ProcessedEmailRepository(conn)
@@ -85,12 +120,22 @@ class EmailProcessor:
                 continue
 
             msg = self._gmail_client.get_message(account, message_id)
-            classification = self._classifier.classify(
-                subject=msg.subject,
-                sender=msg.sender,
-                body=msg.body,
-                snippet=msg.snippet,
-            )
+            is_safe = self._is_safe_sender(msg.sender)
+            try:
+                classification = self._classifier.classify(
+                    subject=msg.subject,
+                    sender=msg.sender,
+                    body=msg.body,
+                    snippet=msg.snippet,
+                )
+            except ClassificationError as exc:
+                logger.error(
+                    "Classification failed for message %s in account %s; skipping message: %s",
+                    msg.id,
+                    account.email,
+                    exc,
+                )
+                continue
 
             if self._dry_run:
                 logger.info(
@@ -101,20 +146,30 @@ class EmailProcessor:
                 )
                 continue
 
-            processed_repo.mark_processed(
-                account_id=account.id,
-                gmail_message_id=msg.id,
-                category=classification.category,
-                subject=msg.subject,
-                gmail_thread_id=msg.thread_id,
-                raw_labels=",".join(msg.labels) if msg.labels else None,
-            )
+            try:
+                processed_repo.mark_processed(
+                    account_id=account.id,
+                    gmail_message_id=msg.id,
+                    category=classification.category,
+                    subject=msg.subject,
+                    gmail_thread_id=msg.thread_id,
+                    raw_labels=",".join(msg.labels) if msg.labels else None,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Failed to persist processed email %s for account %s; skipping actions: %s",
+                    msg.id,
+                    account.email,
+                    exc,
+                )
+                continue
 
             self._apply_actions(
                 account=account,
                 msg_id=msg.id,
                 labels_map=labels_map,
                 category=classification.category,
+                is_safe_sender=is_safe,
             )
 
     def _apply_actions(
@@ -123,6 +178,7 @@ class EmailProcessor:
         msg_id: str,
         labels_map: dict[str, str],
         category: str,
+        is_safe_sender: bool,
     ) -> None:
         add_ids: List[str] = []
 
@@ -132,6 +188,15 @@ class EmailProcessor:
                 msg_id,
                 account.email,
                 category,
+            )
+            return
+
+        # Global per-run label action safety limit.
+        if self._label_actions_this_run >= self._max_label_actions_per_run:
+            logger.warning(
+                "Label action limit reached (%s); skipping actions for message %s",
+                self._max_label_actions_per_run,
+                msg_id,
             )
             return
 
@@ -149,7 +214,8 @@ class EmailProcessor:
             _maybe_add("receipts")
         elif category == "newsletters":
             _maybe_add("newsletters")
-            if self._archives_this_run < self._max_archives_per_run:
+            # For safe senders, do not auto-archive newsletters.
+            if not is_safe_sender and self._archives_this_run < self._max_archives_per_run:
                 self._gmail_client.archive_message(account, msg_id)
                 self._archives_this_run += 1
             else:
@@ -160,7 +226,8 @@ class EmailProcessor:
                 )
         elif category == "promotions":
             _maybe_add("promotions")
-            if self._archives_this_run < self._max_archives_per_run:
+            # For safe senders, do not auto-archive promotions.
+            if not is_safe_sender and self._archives_this_run < self._max_archives_per_run:
                 self._gmail_client.archive_message(account, msg_id)
                 self._archives_this_run += 1
             else:
@@ -173,7 +240,13 @@ class EmailProcessor:
             _maybe_add("personal")
         elif category == "spam":
             # Respect spam mark rate limit, using Gmail's built-in SPAM label.
-            if self._spam_marks_this_run < self._max_spam_marks_per_run:
+            # For safe senders, NEVER mark as spam.
+            if is_safe_sender:
+                logger.info(
+                    "Safe sender message %s classified as spam; skipping spam label due to safety rules",
+                    msg_id,
+                )
+            elif self._spam_marks_this_run < self._max_spam_marks_per_run:
                 spam_id = labels_map.get("SPAM")
                 if spam_id:
                     add_ids.append(spam_id)
@@ -186,6 +259,15 @@ class EmailProcessor:
                 )
 
         if add_ids:
+            projected = self._label_actions_this_run + len(add_ids)
+            if projected > self._max_label_actions_per_run:
+                logger.warning(
+                    "Label action limit reached (%s); skipping label changes for message %s",
+                    self._max_label_actions_per_run,
+                    msg_id,
+                )
+                return
             self._gmail_client.apply_labels(
                 account, msg_id, labels_to_add=add_ids, labels_to_remove=None
             )
+            self._label_actions_this_run = projected

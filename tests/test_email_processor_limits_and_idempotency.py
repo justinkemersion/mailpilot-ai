@@ -120,3 +120,84 @@ def test_rate_limiting_archives_per_run(monkeypatch):
     assert labeled_ids == {"m1", "m2", "m3"}
 
 
+def test_rate_limiting_archives_for_many_promotions(monkeypatch):
+    """
+    Verify that archive actions are capped per run for many promotion emails.
+    """
+    from mailpilot import database
+
+    monkeypatch.setenv("MAILPILOT_DB_PATH", ":memory:")
+
+    class ManyPromotionsGmailClient:
+        def __init__(self) -> None:
+            self.archived = []
+            self.applied_labels = []
+
+        def ensure_labels(self, account):
+            return {"promotions": "LBL_PROMO"}
+
+        def list_messages(self, account, label_ids=None, query=None, max_results=100):
+            # Simulate 100 promotion emails in INBOX.
+            return [f"m{i}" for i in range(100)]
+
+        def get_message(self, account, message_id):
+            @dataclass
+            class M:
+                id: str
+                thread_id: str | None
+                subject: str | None
+                sender: str | None
+                snippet: str | None
+                body: str | None
+                labels: list[str]
+
+            return M(
+                id=message_id,
+                thread_id=None,
+                subject="Promo",
+                sender="promo@example.com",
+                snippet="Snippet",
+                body="Body",
+                labels=["INBOX"],
+            )
+
+        def archive_message(self, account, message_id):
+            self.archived.append(message_id)
+
+        def apply_labels(self, account, message_id, labels_to_add=None, labels_to_remove=None):
+            self.applied_labels.append(
+                {
+                    "id": message_id,
+                    "add": labels_to_add or [],
+                    "remove": labels_to_remove or [],
+                }
+            )
+
+        def flag_important(self, account, message_id):
+            return None
+
+    # Use the real connection_ctx for DB isolation
+    monkeypatch.setattr("mailpilot.email_processor.connection_ctx", database.connection_ctx)
+
+    gmail = ManyPromotionsGmailClient()
+    processor = EmailProcessor(
+        gmail_client=gmail,
+        classifier=DummyClassifier("promotions"),
+        max_archives_per_run=30,
+        max_spam_marks_per_run=5,
+        search_query=None,
+    )
+
+    # Ensure there is one active account
+    with database.connection_ctx() as conn:
+        from mailpilot.database import AccountRepository
+
+        repo = AccountRepository(conn)
+        repo.add_or_update("user@example.com", "{}", "User")
+
+    processor.process_all_accounts_once()
+
+    # Only 30 messages should be archived despite 100 candidates
+    assert len(gmail.archived) == 30
+
+
