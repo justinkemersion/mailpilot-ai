@@ -2,6 +2,24 @@
 
 MailPilot is a Python-based, AI-powered Gmail inbox manager. It connects to one or more Gmail accounts, periodically fetches new emails, classifies them using an LLM, and automatically applies labels and actions (archiving, flagging important messages) to keep your inbox organized.
 
+## What MailPilot Does
+
+MailPilot acts as an AI autopilot for your Gmail inbox.
+
+It periodically scans new emails, classifies them using an LLM,
+and safely applies Gmail labels and actions to keep your inbox organized.
+
+Typical actions include:
+
+- Label receipts automatically
+- Archive promotions and newsletters
+- Highlight important emails
+- Categorize personal vs work messages
+
+MailPilot is designed with safety-first automation:
+it avoids destructive actions and tracks processed emails
+to ensure idempotent behavior.
+
 ### Features
 
 - **Multi-account Gmail support** via OAuth and the Gmail API.
