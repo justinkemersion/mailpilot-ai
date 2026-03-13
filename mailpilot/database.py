@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -11,7 +12,19 @@ from .config import load_config
 from .models import Account, ProcessedEmail
 
 
+_IN_MEMORY_CONN: sqlite3.Connection | None = None
+
+
 def _get_db_path() -> Path:
+    """
+    Determine the database path.
+
+    Special-case MAILPILOT_DB_PATH == ':memory:' so tests can use an
+    in-memory database without requiring other config like OPENAI_API_KEY.
+    """
+    env_db = os.getenv("MAILPILOT_DB_PATH")
+    if env_db == ":memory:":
+        return Path(":memory:")
     return load_config().db_path
 
 
@@ -20,6 +33,15 @@ def get_connection() -> sqlite3.Connection:
     Get a SQLite connection, ensuring the schema exists.
     """
     db_path = _get_db_path()
+    # Special handling for in-memory DB used in tests
+    global _IN_MEMORY_CONN
+    if str(db_path) == ":memory:":
+        if _IN_MEMORY_CONN is None:
+            _IN_MEMORY_CONN = sqlite3.connect(":memory:")
+            _IN_MEMORY_CONN.row_factory = sqlite3.Row
+            _init_schema(_IN_MEMORY_CONN)
+        return _IN_MEMORY_CONN
+
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -34,7 +56,9 @@ def connection_ctx() -> Iterator[sqlite3.Connection]:
         yield conn
         conn.commit()
     finally:
-        conn.close()
+        # Keep the global in-memory connection alive for the duration of the process
+        if conn is not _IN_MEMORY_CONN:
+            conn.close()
 
 
 def _init_schema(conn: sqlite3.Connection) -> None:

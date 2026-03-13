@@ -27,7 +27,6 @@ class EmailProcessor:
         classifier: Classifier | None = None,
         max_archives_per_run: int = 50,
         max_spam_marks_per_run: int = 20,
-        dry_run: bool = False,
     ) -> None:
         self._gmail_client = gmail_client or GmailClient()
         self._classifier = classifier or OpenAIClassifier()
@@ -35,7 +34,13 @@ class EmailProcessor:
         self._max_spam_marks_per_run = max_spam_marks_per_run
         self._archives_this_run = 0
         self._spam_marks_this_run = 0
-        self._dry_run = dry_run
+        self._dry_run = False
+
+    def enable_dry_run(self) -> None:
+        """
+        Enable dry-run mode, where actions are logged but not sent to Gmail.
+        """
+        self._dry_run = True
 
     def process_all_accounts_once(self) -> None:
         # Reset per-run counters for rate limiting

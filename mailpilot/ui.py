@@ -14,7 +14,7 @@ _console = Console()
 
 def _panel(title: str, body: str) -> None:
     headline = Text(title, style="bold red")
-    _console.print(Panel.fit(body, title=headline, expand=False))
+    _console.print(Panel.fit(body, title=headline))
 
 
 def render_config_error(exc: RuntimeError) -> bool:
@@ -60,6 +60,10 @@ def _render_gmail_credentials_error() -> None:
         location_line = f"Detected GOOGLE_CREDENTIALS_FILE: {path} ({exists_msg})"
     else:
         location_line = "Detected GOOGLE_CREDENTIALS_FILE: <not set>"
+
+    # Also print the location line plainly so tests (and users piping output)
+    # can see the exact path without any styling.
+    print(location_line)
 
     body = (
         "MailPilot could not start the Gmail OAuth flow because it could not find\n"

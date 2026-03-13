@@ -16,7 +16,9 @@ def run_once(dry_run: bool = False) -> None:
     """
     Process new emails for all accounts once.
     """
-    processor = EmailProcessor(dry_run=dry_run)
+    processor = EmailProcessor()
+    if dry_run:
+        processor.enable_dry_run()
     processor.process_all_accounts_once()
 
 
