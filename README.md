@@ -160,6 +160,32 @@ Optionally override the polling interval:
 python -m mailpilot.main run --interval 120
 ```
 
+- **Control how deep MailPilot scans your inbox**:
+
+By default, MailPilot considers unread messages in your `INBOX`. You can fine-tune this:
+
+- Limit to recent mail only (e.g., last 30 days):
+
+```bash
+python -m mailpilot.main run-once --newer-than-days 30
+```
+
+- Include read messages as well as unread ones (still respecting idempotency and per-run limits):
+
+```bash
+python -m mailpilot.main run-once --newer-than-days 30 --include-read
+```
+
+If you ask MailPilot to include read messages **without** a `--newer-than-days` bound, it will warn you and ask for confirmation before scanning your entire `INBOX`.
+
+- Advanced: use a raw Gmail search query (still constrained to `INBOX`) for power users:
+
+```bash
+python -m mailpilot.main run-once --query "from:boss@example.com newer_than:7d"
+```
+
+If your raw query does **not** include a date bound (e.g. `newer_than:` or `after:`) or `is:unread`, MailPilot will warn you that it may scan your entire `INBOX` and ask for confirmation before proceeding.
+
 - **Summarize recent categorized emails**:
 
 ```bash

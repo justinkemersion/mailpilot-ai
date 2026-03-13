@@ -27,6 +27,7 @@ class EmailProcessor:
         classifier: Classifier | None = None,
         max_archives_per_run: int = 50,
         max_spam_marks_per_run: int = 20,
+        search_query: str | None = "is:unread",
     ) -> None:
         self._gmail_client = gmail_client or GmailClient()
         self._classifier = classifier or OpenAIClassifier()
@@ -35,6 +36,7 @@ class EmailProcessor:
         self._archives_this_run = 0
         self._spam_marks_this_run = 0
         self._dry_run = False
+        self._search_query = search_query
 
     def enable_dry_run(self) -> None:
         """
@@ -73,7 +75,7 @@ class EmailProcessor:
         message_ids = self._gmail_client.list_messages(
             account,
             label_ids=[inbox_label],
-            query="is:unread",
+            query=self._search_query,
             max_results=100,
         )
         logger.info("Found %d candidate messages for %s", len(message_ids), account.email)

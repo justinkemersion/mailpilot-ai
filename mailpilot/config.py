@@ -16,6 +16,10 @@ def _load_dotenv() -> None:
 
     This is safe in production because real env vars take precedence.
     """
+    # During pytest runs, avoid re-loading .env so tests can control
+    # configuration purely via environment variables.
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return
     env_path = _ROOT_DIR / ".env"
     if env_path.exists():
         load_dotenv(env_path)

@@ -12,17 +12,17 @@ from .email_processor import EmailProcessor
 logger = logging.getLogger(__name__)
 
 
-def run_once(dry_run: bool = False) -> None:
+def run_once(dry_run: bool = False, search_query: str | None = None) -> None:
     """
     Process new emails for all accounts once.
     """
-    processor = EmailProcessor()
+    processor = EmailProcessor() if search_query is None else EmailProcessor(search_query=search_query)
     if dry_run:
         processor.enable_dry_run()
     processor.process_all_accounts_once()
 
 
-def run_forever(interval_seconds: int, dry_run: bool = False) -> None:
+def run_forever(interval_seconds: int, dry_run: bool = False, search_query: str | None = None) -> None:
     """
     Run an internal loop that periodically processes new emails.
     """
@@ -40,7 +40,7 @@ def run_forever(interval_seconds: int, dry_run: bool = False) -> None:
     while not stop:
         start = time.time()
         try:
-            run_once(dry_run=dry_run)
+            run_once(dry_run=dry_run, search_query=search_query)
         except Exception as exc:  # defensive; log and continue
             logger.exception("Error during scheduled run: %s", exc)
         elapsed = time.time() - start
