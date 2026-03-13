@@ -73,7 +73,7 @@ flowchart LR
 1. Clone the repository:
 
 ```bash
-git clone <your-repo-url> mailpilot-ai
+git clone https://github.com/justinkemersion/mailpilot-ai.git mailpilot-ai
 cd mailpilot-ai
 ```
 
