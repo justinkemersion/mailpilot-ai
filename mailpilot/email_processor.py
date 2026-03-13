@@ -65,7 +65,9 @@ class EmailProcessor:
     ) -> None:
         logger.info("Processing account %s", account.email)
 
-        labels_map = self._gmail_client.ensure_labels(account)
+        labels_map: dict[str, str] = {}
+        if not self._dry_run:
+            labels_map = self._gmail_client.ensure_labels(account)
         inbox_label = "INBOX"
 
         message_ids = self._gmail_client.list_messages(
@@ -87,6 +89,15 @@ class EmailProcessor:
                 body=msg.body,
                 snippet=msg.snippet,
             )
+
+            if self._dry_run:
+                logger.info(
+                    "DRY-RUN: would classify message %s for %s as %s",
+                    msg.id,
+                    account.email,
+                    classification.category,
+                )
+                continue
 
             processed_repo.mark_processed(
                 account_id=account.id,

@@ -98,17 +98,28 @@ class OpenAIClassifier:
         )
 
         try:
-            response = self._client.responses.create(
-                model=self._model,
-                instructions=SYSTEM_PROMPT.strip(),
-                input=user_input,
-                response_format={"type": "json_object"},
-            )
+            # Branch for test/dummy clients that expose the legacy .responses surface.
+            if hasattr(self._client, "responses"):
+                response = self._client.responses.create(
+                    model=self._model,
+                    instructions=SYSTEM_PROMPT.strip(),
+                    input=user_input,
+                )
+                text = response.output[0].content[0].text
+            else:
+                chat = self._client.chat.completions.create(
+                    model=self._model,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT.strip()},
+                        {"role": "user", "content": user_input},
+                    ],
+                    temperature=0,
+                )
+                text = chat.choices[0].message.content or ""
         except Exception as exc:  # network or API error
             logger.error("OpenAI classification failed: %s", exc)
             return ClassifiedEmail(category="important", confidence=None, rationale=None)
 
-        text = response.output[0].content[0].text
         try:
             payload = json.loads(text)
             category = payload.get("category", "important")
