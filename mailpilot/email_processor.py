@@ -25,11 +25,20 @@ class EmailProcessor:
         self,
         gmail_client: GmailClient | None = None,
         classifier: Classifier | None = None,
+        max_archives_per_run: int = 50,
+        max_spam_marks_per_run: int = 20,
     ) -> None:
         self._gmail_client = gmail_client or GmailClient()
         self._classifier = classifier or OpenAIClassifier()
+        self._max_archives_per_run = max_archives_per_run
+        self._max_spam_marks_per_run = max_spam_marks_per_run
+        self._archives_this_run = 0
+        self._spam_marks_this_run = 0
 
     def process_all_accounts_once(self) -> None:
+        # Reset per-run counters for rate limiting
+        self._archives_this_run = 0
+        self._spam_marks_this_run = 0
         with connection_ctx() as conn:
             account_repo = AccountRepository(conn)
             processed_repo = ProcessedEmailRepository(conn)
@@ -111,14 +120,41 @@ class EmailProcessor:
             _maybe_add("receipts")
         elif category == "newsletters":
             _maybe_add("newsletters")
-            self._gmail_client.archive_message(account, msg_id)
+            if self._archives_this_run < self._max_archives_per_run:
+                self._gmail_client.archive_message(account, msg_id)
+                self._archives_this_run += 1
+            else:
+                logger.warning(
+                    "Archive limit reached (%s); skipping archive for %s",
+                    self._max_archives_per_run,
+                    msg_id,
+                )
         elif category == "promotions":
             _maybe_add("promotions")
-            self._gmail_client.archive_message(account, msg_id)
+            if self._archives_this_run < self._max_archives_per_run:
+                self._gmail_client.archive_message(account, msg_id)
+                self._archives_this_run += 1
+            else:
+                logger.warning(
+                    "Archive limit reached (%s); skipping archive for %s",
+                    self._max_archives_per_run,
+                    msg_id,
+                )
         elif category == "personal":
             _maybe_add("personal")
         elif category == "spam":
-            _maybe_add("spam")
+            # Respect spam mark rate limit
+            if self._spam_marks_this_run < self._max_spam_marks_per_run:
+                _maybe_add("spam")
+                self._spam_marks_this_run += 1
+            else:
+                logger.warning(
+                    "Spam mark limit reached (%s); skipping spam label for %s",
+                    self._max_spam_marks_per_run,
+                    msg_id,
+                )
 
         if add_ids:
-            self._gmail_client.apply_labels(account, msg_id, labels_to_add=add_ids, labels_to_remove=None)
+            self._gmail_client.apply_labels(
+                account, msg_id, labels_to_add=add_ids, labels_to_remove=None
+            )

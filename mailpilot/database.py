@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional
 
@@ -73,7 +73,7 @@ class AccountRepository:
         self._conn = conn
 
     def add_or_update(self, email: str, token_json: str, display_name: Optional[str]) -> Account:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         cur = self._conn.cursor()
         cur.execute(
             """
@@ -138,7 +138,7 @@ class ProcessedEmailRepository:
         gmail_thread_id: Optional[str],
         raw_labels: Optional[str],
     ) -> ProcessedEmail:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         cur = self._conn.cursor()
         cur.execute(
             """

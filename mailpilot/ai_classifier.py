@@ -66,9 +66,15 @@ class OpenAIClassifier:
     OpenAI-backed classifier implementing the Strategy pattern.
     """
 
-    def __init__(self) -> None:
-        config = load_config()
-        self._client = OpenAI(api_key=config.openai_api_key)
+    def __init__(self, client: OpenAI | None = None) -> None:
+        """
+        Optionally accept a preconfigured OpenAI client (useful for testing).
+        """
+        if client is not None:
+            self._client = client
+        else:
+            config = load_config()
+            self._client = OpenAI(api_key=config.openai_api_key)
         self._model = "gpt-5.2-mini"  # can be made configurable later
 
     def classify(

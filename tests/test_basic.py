@@ -1,7 +1,7 @@
 from mailpilot.ai_classifier import OpenAIClassifier
 
 
-def test_classifier_interface_smoke(monkeypatch):
+def test_classifier_interface_smoke():
     """
     Smoke-test that the classifier exposes the expected interface
     and returns a valid category when the OpenAI client is mocked.
@@ -18,15 +18,15 @@ def test_classifier_interface_smoke(monkeypatch):
             self.output = [OutputItem()]
 
     class DummyClient:
-        def responses(self):  # type: ignore[override]
-            return self
+        class Responses:
+            def create(self, *args, **kwargs):  # type: ignore[override]
+                return DummyResponse()
 
-        def create(self, *args, **kwargs):  # type: ignore[override]
-            return DummyResponse()
+        def __init__(self) -> None:
+            self.responses = self.Responses()
 
-    # Patch the internal client
-    classifier = OpenAIClassifier()
-    classifier._client = DummyClient()  # type: ignore[attr-defined]
+    # Inject dummy client so no real API calls or config are needed
+    classifier = OpenAIClassifier(client=DummyClient())
 
     result = classifier.classify(
         subject="Test subject",
