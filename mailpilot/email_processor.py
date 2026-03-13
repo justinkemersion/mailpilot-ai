@@ -27,6 +27,7 @@ class EmailProcessor:
         classifier: Classifier | None = None,
         max_archives_per_run: int = 50,
         max_spam_marks_per_run: int = 20,
+        dry_run: bool = False,
     ) -> None:
         self._gmail_client = gmail_client or GmailClient()
         self._classifier = classifier or OpenAIClassifier()
@@ -34,6 +35,7 @@ class EmailProcessor:
         self._max_spam_marks_per_run = max_spam_marks_per_run
         self._archives_this_run = 0
         self._spam_marks_this_run = 0
+        self._dry_run = dry_run
 
     def process_all_accounts_once(self) -> None:
         # Reset per-run counters for rate limiting
@@ -105,6 +107,15 @@ class EmailProcessor:
         category: str,
     ) -> None:
         add_ids: List[str] = []
+
+        if self._dry_run:
+            logger.info(
+                "DRY-RUN: would apply actions for message %s in account %s with category %s",
+                msg_id,
+                account.email,
+                category,
+            )
+            return
 
         def _maybe_add(label_name: str) -> None:
             lid = labels_map.get(label_name)

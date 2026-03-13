@@ -34,6 +34,18 @@ class MailPilotConfig:
         return str(self.db_path)
 
 
+def get_openai_model_name() -> str:
+    """
+    Return the OpenAI model name to use for classification.
+
+    This is intentionally independent from the main MailPilotConfig so that
+    tests can configure a classifier with a dummy OpenAI client without
+    requiring OPENAI_API_KEY to be set.
+    """
+    _load_dotenv()
+    return os.getenv("MAILPILOT_OPENAI_MODEL", "gpt-4.1-mini")
+
+
 def load_config() -> MailPilotConfig:
     """
     Build a MailPilotConfig from environment variables.

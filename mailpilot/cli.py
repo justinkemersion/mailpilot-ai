@@ -34,23 +34,38 @@ def run_command(
         "-i",
         help="Polling interval in seconds (overrides MAILPILOT_POLL_INTERVAL_SECONDS).",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Log intended actions without modifying Gmail labels or archiving.",
+    ),
 ) -> None:
     """
     Run MailPilot in a continuous loop, periodically processing new emails.
     """
     config = load_config()
     effective_interval = interval or config.poll_interval_seconds
-    logger.info("Starting MailPilot continuous run (interval=%s)", effective_interval)
-    run_forever(effective_interval)
+    logger.info(
+        "Starting MailPilot continuous run (interval=%s, dry_run=%s)",
+        effective_interval,
+        dry_run,
+    )
+    run_forever(effective_interval, dry_run=dry_run)
 
 
 @app.command("run-once")
-def run_once_command() -> None:
+def run_once_command(
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Log intended actions without modifying Gmail labels or archiving.",
+    ),
+) -> None:
     """
     Process new emails for all accounts once and exit.
     """
-    logger.info("Running MailPilot once")
-    run_once()
+    logger.info("Running MailPilot once (dry_run=%s)", dry_run)
+    run_once(dry_run=dry_run)
 
 
 @app.command("add-account")

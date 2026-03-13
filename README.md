@@ -114,6 +114,7 @@ MailPilot uses the installed-app flow; when you run `add-account`, your browser 
 1. Create an OpenAI account if you do not have one.
 2. Generate an API key from the OpenAI dashboard.
 3. Set `OPENAI_API_KEY` in `.env`.
+4. Optionally set `MAILPILOT_OPENAI_MODEL` in `.env` to control which OpenAI model is used for classification (defaults to `gpt-4.1-mini`).
 
 ### Running MailPilot
 
@@ -135,10 +136,22 @@ python -m mailpilot.main add-account
 python -m mailpilot.main run-once
 ```
 
+To do a dry run that **does not modify Gmail labels or archive messages**, add `--dry-run`:
+
+```bash
+python -m mailpilot.main run-once --dry-run
+```
+
 - **Run continuously with internal scheduler**:
 
 ```bash
 python -m mailpilot.main run
+```
+
+With dry-run enabled:
+
+```bash
+python -m mailpilot.main run --dry-run
 ```
 
 Optionally override the polling interval:

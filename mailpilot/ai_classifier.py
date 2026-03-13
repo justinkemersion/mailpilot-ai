@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import logging
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
 from openai import OpenAI
 
-from .config import load_config
+from .config import get_openai_model_name, load_config
 
 
 logger = logging.getLogger(__name__)
@@ -70,12 +71,12 @@ class OpenAIClassifier:
         """
         Optionally accept a preconfigured OpenAI client (useful for testing).
         """
+        self._model = get_openai_model_name()
         if client is not None:
             self._client = client
         else:
             config = load_config()
             self._client = OpenAI(api_key=config.openai_api_key)
-        self._model = "gpt-5.2-mini"  # can be made configurable later
 
     def classify(
         self,
