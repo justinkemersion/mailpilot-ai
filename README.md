@@ -174,6 +174,14 @@ Instead of using the internal scheduler, you can schedule periodic runs via cron
 */5 * * * * /path/to/venv/bin/python -m mailpilot.main run-once >> /var/log/mailpilot-cron.log 2>&1
 ```
 
+### Troubleshooting
+
+- **Missing OpenAI API key**  
+  If you run a command like `python -m mailpilot.main run-once` and MailPilot cannot find `OPENAI_API_KEY`, it will show a styled error screen explaining how to create an API key and add it to your `.env` file.
+
+- **Missing or invalid Gmail OAuth credentials**  
+  If you run `python -m mailpilot.main add-account` and `GOOGLE_CREDENTIALS_FILE` is not set or points to a non-existent file, MailPilot will display a friendly error screen showing the detected value and step-by-step instructions to create the credentials JSON and update your `.env`.
+
 ### Roadmap
 
 - **Web dashboard** for viewing and adjusting classifications.
