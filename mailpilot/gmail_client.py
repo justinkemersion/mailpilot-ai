@@ -28,7 +28,6 @@ REQUIRED_LABEL_NAMES = [
     "newsletters",
     "promotions",
     "personal",
-    "spam",
     "mailpilot/important",
 ]
 

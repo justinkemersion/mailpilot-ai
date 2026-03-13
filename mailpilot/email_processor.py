@@ -170,9 +170,11 @@ class EmailProcessor:
         elif category == "personal":
             _maybe_add("personal")
         elif category == "spam":
-            # Respect spam mark rate limit
+            # Respect spam mark rate limit, using Gmail's built-in SPAM label.
             if self._spam_marks_this_run < self._max_spam_marks_per_run:
-                _maybe_add("spam")
+                spam_id = labels_map.get("SPAM")
+                if spam_id:
+                    add_ids.append(spam_id)
                 self._spam_marks_this_run += 1
             else:
                 logger.warning(
