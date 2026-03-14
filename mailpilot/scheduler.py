@@ -4,27 +4,33 @@ import logging
 import signal
 import sys
 import time
-from typing import Callable
+from typing import Callable, Optional
 
-from .email_processor import EmailProcessor
+from .email_processor import EmailProcessor, RunResult
 
 
 logger = logging.getLogger(__name__)
 
 
-def run_once(dry_run: bool = False, search_query: str | None = None) -> None:
+def run_once(dry_run: bool = False, search_query: str | None = None) -> RunResult:
     """
-    Process new emails for all accounts once.
+    Process new emails for all accounts once. Returns a run summary.
     """
     processor = EmailProcessor() if search_query is None else EmailProcessor(search_query=search_query)
     if dry_run:
         processor.enable_dry_run()
-    processor.process_all_accounts_once()
+    return processor.process_all_accounts_once()
 
 
-def run_forever(interval_seconds: int, dry_run: bool = False, search_query: str | None = None) -> None:
+def run_forever(
+    interval_seconds: int,
+    dry_run: bool = False,
+    search_query: str | None = None,
+    on_run_done: Optional[Callable[[RunResult], None]] = None,
+) -> None:
     """
     Run an internal loop that periodically processes new emails.
+    If on_run_done is provided, it is called with the RunResult after each run.
     """
     stop = False
 
@@ -40,7 +46,9 @@ def run_forever(interval_seconds: int, dry_run: bool = False, search_query: str 
     while not stop:
         start = time.time()
         try:
-            run_once(dry_run=dry_run, search_query=search_query)
+            result = run_once(dry_run=dry_run, search_query=search_query)
+            if on_run_done is not None:
+                on_run_done(result)
         except Exception as exc:  # defensive; log and continue
             logger.exception("Error during scheduled run: %s", exc)
         elapsed = time.time() - start

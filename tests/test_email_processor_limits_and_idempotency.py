@@ -7,6 +7,7 @@ from mailpilot.models import Account
 @dataclass
 class DummyClassification:
     category: str
+    noise_type: str | None = None
 
 
 class DummyClassifier:

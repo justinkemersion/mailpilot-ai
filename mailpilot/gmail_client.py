@@ -17,10 +17,8 @@ from .models import Account
 
 logger = logging.getLogger(__name__)
 
-SCOPES = [
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.modify",
-]
+# The only scope MailPilot needs: read + labels/archive/important.
+SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
 REQUIRED_LABEL_NAMES = [
     "work",
@@ -29,6 +27,7 @@ REQUIRED_LABEL_NAMES = [
     "promotions",
     "personal",
     "mailpilot/important",
+    "security",
 ]
 
 
@@ -45,6 +44,10 @@ def add_account_via_oauth() -> None:
     flow = InstalledAppFlow.from_client_secrets_file(
         str(config.gmail_credentials_file),
         scopes=SCOPES,
+    )
+    print(
+        "Gmail OAuth: the only scope needed is https://www.googleapis.com/auth/gmail.modify "
+        "(set this under your OAuth client in Google Cloud Console if prompted)."
     )
     creds = flow.run_local_server(port=0)
 
@@ -209,6 +212,72 @@ class GmailClient:
             label_ids.append(name_to_id["mailpilot/important"])
         if label_ids:
             self.apply_labels(account, message_id, labels_to_add=label_ids, labels_to_remove=None)
+
+
+class ForbiddenGmailActionError(RuntimeError):
+    """
+    Raised when MailPilot code attempts a disallowed Gmail operation
+    such as delete or trash.
+    """
+
+
+class SafeGmailClient:
+    """
+    Safety wrapper around GmailClient that enforces an explicit allowlist
+    of Gmail operations and rejects destructive actions like delete/trash.
+    """
+
+    def __init__(self, inner: GmailClient) -> None:
+        self._inner = inner
+
+    # Allowed operations (forwarded directly)
+
+    def ensure_labels(self, account: Account) -> Dict[str, str]:
+        return self._inner.ensure_labels(account)
+
+    def list_messages(
+        self,
+        account: Account,
+        label_ids: Optional[List[str]] = None,
+        query: Optional[str] = None,
+        max_results: int = 100,
+    ) -> List[str]:
+        return self._inner.list_messages(account, label_ids=label_ids, query=query, max_results=max_results)
+
+    def get_message(self, account: Account, message_id: str) -> GmailMessage:
+        return self._inner.get_message(account, message_id)
+
+    def apply_labels(
+        self,
+        account: Account,
+        message_id: str,
+        labels_to_add: Optional[List[str]] = None,
+        labels_to_remove: Optional[List[str]] = None,
+    ) -> None:
+        self._inner.apply_labels(account, message_id, labels_to_add=labels_to_add, labels_to_remove=labels_to_remove)
+
+    def archive_message(self, account: Account, message_id: str) -> None:
+        self._inner.archive_message(account, message_id)
+
+    def flag_important(self, account: Account, message_id: str) -> None:
+        self._inner.flag_important(account, message_id)
+
+    # Explicitly forbidden operations
+
+    def delete_message(self, *args, **kwargs) -> None:
+        raise ForbiddenGmailActionError(
+            "MailPilot safety guardrail: deleting Gmail messages is not allowed."
+        )
+
+    def trash_message(self, *args, **kwargs) -> None:
+        raise ForbiddenGmailActionError(
+            "MailPilot safety guardrail: moving Gmail messages to trash is not allowed."
+        )
+
+    def batch_delete_messages(self, *args, **kwargs) -> None:
+        raise ForbiddenGmailActionError(
+            "MailPilot safety guardrail: batch deletion of Gmail messages is not allowed."
+        )
 
 
 def _extract_body(payload: dict) -> Optional[str]:

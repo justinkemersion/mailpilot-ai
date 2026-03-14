@@ -73,10 +73,12 @@ def _render_gmail_credentials_error() -> None:
         "  1. Go to the Google Cloud Console and create a project.\n"
         "  2. Enable the Gmail API and configure the OAuth consent screen.\n"
         "  3. Create OAuth 2.0 credentials of type Desktop application.\n"
-        "  4. Download the client credentials JSON file to a secure location.\n"
-        "  5. In your project .env file, set for example:\n"
+        "  4. Under scope, use this (the only scope MailPilot needs):\n"
+        "       https://www.googleapis.com/auth/gmail.modify\n"
+        "  5. Download the client credentials JSON file to a secure location.\n"
+        "  6. In your project .env file, set for example:\n"
         "       GOOGLE_CREDENTIALS_FILE=/full/path/to/google_client_secrets.json\n"
-        "  6. Save the file and re-run:\n"
+        "  7. Save the file and re-run:\n"
         "       python -m mailpilot.main add-account\n"
     )
     _panel("Missing or invalid Gmail OAuth credentials", body)

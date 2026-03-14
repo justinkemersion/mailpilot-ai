@@ -122,8 +122,10 @@ Fill in `OPENAI_API_KEY` and `GOOGLE_CREDENTIALS_FILE` at minimum.
 2. Enable the **Gmail API** for your project.
 3. Configure an OAuth consent screen (External or Internal as appropriate).
 4. Create OAuth 2.0 credentials of type **Desktop application**.
-5. Download the client credentials JSON file and store it securely on your machine.
-6. Set `GOOGLE_CREDENTIALS_FILE` in `.env` to the full path of that JSON file.
+5. Under your OAuth client, ensure the **scope** used is (this is the only scope MailPilot needs):
+   - `https://www.googleapis.com/auth/gmail.modify`
+6. Download the client credentials JSON file and store it securely on your machine.
+7. Set `GOOGLE_CREDENTIALS_FILE` in `.env` to the full path of that JSON file.
 
 MailPilot uses the installed-app flow; when you run `add-account`, your browser will open and ask for consent. Tokens are stored in SQLite and refreshed automatically by the Google client libraries.
 
@@ -203,6 +205,12 @@ python -m mailpilot.main run-once --query "from:boss@example.com newer_than:7d"
 ```
 
 If your raw query does **not** include a date bound (e.g. `newer_than:` or `after:`) or `is:unread`, MailPilot will warn you that it may scan your entire `INBOX` and ask for confirmation before proceeding.
+
+- **Reducing inbox noise (optional)**  
+  By default, MailPilot keeps routine security notices and receipts in the inbox (only newsletters and promotions are archived) so that important messages are not hidden. Once you are comfortable with classifications, you can enable:
+
+  - **`MAILPILOT_ARCHIVE_SECURITY_NOISE=1`** – Archive routine security noise (e.g. “2FA backup codes generated”, “You allowed X app”). Truly critical security alerts (e.g. new sign-in from unknown device) remain classified as important and stay in the inbox. Archived security messages are labeled `security` so you can find them.
+  - **`MAILPILOT_ARCHIVE_RECEIPTS=1`** – Archive receipts and transactional confirmations (same per-run limits as newsletters). Add these to `.env` when you want to ease into a quieter inbox.
 
 - **Summarize recent categorized emails**:
 

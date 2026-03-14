@@ -6,12 +6,28 @@ from typing import Optional
 import typer
 
 from .config import load_config
+from .email_processor import RunResult
 from .scheduler import run_forever, run_once
 
 
 logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="MailPilot - AI-powered Gmail inbox manager")
+
+
+def _echo_run_summary(result: RunResult | None) -> None:
+    """Print a short summary of what MailPilot did so the user sees feedback."""
+    if result is None:
+        return
+    if result.accounts_processed == 0:
+        typer.echo("No accounts configured. Run 'add-account' to add a Gmail account.")
+        return
+    prefix = "Would have: " if result.dry_run else ""
+    typer.echo(
+        f"MailPilot run complete: {result.accounts_processed} account(s), "
+        f"{result.candidates} message(s) in inbox, {result.processed} processed. "
+        f"{prefix}Labels: {result.labels_applied}, archived: {result.archived}, spam: {result.spam_marked}."
+    )
 
 
 @app.callback()
@@ -92,7 +108,12 @@ def run_command(
         effective_interval,
         dry_run,
     )
-    run_forever(effective_interval, dry_run=dry_run, search_query=search_query)
+    run_forever(
+        effective_interval,
+        dry_run=dry_run,
+        search_query=search_query,
+        on_run_done=_echo_run_summary,
+    )
 
 
 @app.command("run-once")
@@ -150,7 +171,8 @@ def run_once_command(
     logger.info(
         "Running MailPilot once (dry_run=%s, search_query=%s)", dry_run, search_query or "<default>"
     )
-    run_once(dry_run=dry_run, search_query=search_query)
+    result = run_once(dry_run=dry_run, search_query=search_query)
+    _echo_run_summary(result)
 
 
 @app.command("add-account")

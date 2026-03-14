@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from email.utils import parseaddr
 from typing import List
 
 from .ai_classifier import ClassificationError, Classifier, OpenAIClassifier
 from .config import (
+    get_archive_receipts,
     get_max_archives_per_run,
     get_max_label_actions_per_run,
     get_max_spam_marks_per_run,
@@ -22,6 +24,19 @@ from .models import Account
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RunResult:
+    """Summary of a single run for user feedback."""
+
+    accounts_processed: int
+    candidates: int
+    processed: int
+    labels_applied: int
+    archived: int
+    spam_marked: int
+    dry_run: bool
 
 
 class EmailProcessor:
@@ -50,8 +65,11 @@ class EmailProcessor:
         self._archives_this_run = 0
         self._spam_marks_this_run = 0
         self._label_actions_this_run = 0
+        self._candidates_this_run = 0
+        self._messages_processed_this_run = 0
         self._dry_run = False
         self._search_query = search_query
+        self._archive_receipts = get_archive_receipts()
         # Preload safe sender configuration from environment.
         self._safe_sender_domains = set(get_safe_sender_domains())
         self._safe_senders = set(get_safe_senders())
@@ -78,11 +96,13 @@ class EmailProcessor:
         """
         self._dry_run = True
 
-    def process_all_accounts_once(self) -> None:
-        # Reset per-run counters for rate limiting
+    def process_all_accounts_once(self) -> RunResult:
+        # Reset per-run counters for rate limiting and stats
         self._archives_this_run = 0
         self._spam_marks_this_run = 0
         self._label_actions_this_run = 0
+        self._candidates_this_run = 0
+        self._messages_processed_this_run = 0
         with connection_ctx() as conn:
             account_repo = AccountRepository(conn)
             processed_repo = ProcessedEmailRepository(conn)
@@ -90,10 +110,28 @@ class EmailProcessor:
             accounts = account_repo.list_active()
             if not accounts:
                 logger.info("No active accounts configured")
-                return
+                return RunResult(
+                    accounts_processed=0,
+                    candidates=0,
+                    processed=0,
+                    labels_applied=0,
+                    archived=0,
+                    spam_marked=0,
+                    dry_run=self._dry_run,
+                )
 
             for account in accounts:
                 self._process_account(account, processed_repo)
+
+        return RunResult(
+            accounts_processed=len(accounts),
+            candidates=self._candidates_this_run,
+            processed=self._messages_processed_this_run,
+            labels_applied=self._label_actions_this_run,
+            archived=self._archives_this_run,
+            spam_marked=self._spam_marks_this_run,
+            dry_run=self._dry_run,
+        )
 
     def _process_account(
         self,
@@ -113,7 +151,16 @@ class EmailProcessor:
             query=self._search_query,
             max_results=100,
         )
-        logger.info("Found %d candidate messages for %s", len(message_ids), account.email)
+        self._candidates_this_run += len(message_ids)
+        new_count = sum(
+            1 for mid in message_ids if not processed_repo.is_processed(account.id, mid)
+        )
+        logger.info(
+            "Found %d candidate message(s) for %s; %d new (not yet processed)",
+            len(message_ids),
+            account.email,
+            new_count,
+        )
 
         for message_id in message_ids:
             if processed_repo.is_processed(account.id, message_id):
@@ -138,6 +185,7 @@ class EmailProcessor:
                 continue
 
             if self._dry_run:
+                self._messages_processed_this_run += 1
                 logger.info(
                     "DRY-RUN: would classify message %s for %s as %s",
                     msg.id,
@@ -170,7 +218,9 @@ class EmailProcessor:
                 labels_map=labels_map,
                 category=classification.category,
                 is_safe_sender=is_safe,
+                noise_type=classification.noise_type,
             )
+            self._messages_processed_this_run += 1
 
     def _apply_actions(
         self,
@@ -179,6 +229,7 @@ class EmailProcessor:
         labels_map: dict[str, str],
         category: str,
         is_safe_sender: bool,
+        noise_type: str | None = None,
     ) -> None:
         add_ids: List[str] = []
 
@@ -212,8 +263,17 @@ class EmailProcessor:
             _maybe_add("work")
         elif category == "receipts":
             _maybe_add("receipts")
+            if (
+                self._archive_receipts
+                and not is_safe_sender
+                and self._archives_this_run < self._max_archives_per_run
+            ):
+                self._gmail_client.archive_message(account, msg_id)
+                self._archives_this_run += 1
         elif category == "newsletters":
             _maybe_add("newsletters")
+            if noise_type == "security":
+                _maybe_add("security")
             # For safe senders, do not auto-archive newsletters.
             if not is_safe_sender and self._archives_this_run < self._max_archives_per_run:
                 self._gmail_client.archive_message(account, msg_id)

@@ -9,6 +9,7 @@ class DummyClassification:
     category: str
     confidence: float | None = None
     rationale: str | None = None
+    noise_type: str | None = None
 
 
 class DummyClassifier:

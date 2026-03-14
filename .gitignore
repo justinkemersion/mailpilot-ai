@@ -51,6 +51,7 @@ htmlcov/
 .DS_Store
 
 # Project-specific
+:memory:
 data/logs/
 data/tokens/
 *.db

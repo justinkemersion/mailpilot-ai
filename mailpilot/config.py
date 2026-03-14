@@ -116,6 +116,27 @@ def get_max_label_actions_per_run() -> int:
         return 200
 
 
+def get_archive_security_noise() -> bool:
+    """
+    When True, routine security noise (e.g. 2FA backup codes, app access confirmations)
+    is archived like newsletters instead of being marked important. Default: False.
+    Set MAILPILOT_ARCHIVE_SECURITY_NOISE=1 to enable.
+    """
+    _load_dotenv()
+    raw = os.getenv("MAILPILOT_ARCHIVE_SECURITY_NOISE", "0").lower()
+    return raw in ("1", "true", "yes")
+
+
+def get_archive_receipts() -> bool:
+    """
+    When True, receipts and transactional confirmations are archived (with the same
+    per-run limits as newsletters). Default: False. Set MAILPILOT_ARCHIVE_RECEIPTS=1 to enable.
+    """
+    _load_dotenv()
+    raw = os.getenv("MAILPILOT_ARCHIVE_RECEIPTS", "0").lower()
+    return raw in ("1", "true", "yes")
+
+
 def load_config() -> MailPilotConfig:
     """
     Build a MailPilotConfig from environment variables.
