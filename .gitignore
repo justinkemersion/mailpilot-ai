@@ -57,3 +57,4 @@ data/tokens/
 *.db
 .env
 .env.*
+!.env.example

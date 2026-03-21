@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 from dataclasses import dataclass
 from email.utils import parseaddr
 from typing import List
@@ -19,7 +20,7 @@ from .database import (
     ProcessedEmailRepository,
     connection_ctx,
 )
-from .gmail_client import GmailClient, SafeGmailClient
+from .gmail_client import GmailApiError, GmailClient, SafeGmailClient
 from .models import Account
 
 
@@ -159,15 +160,31 @@ class EmailProcessor:
 
         labels_map: dict[str, str] = {}
         if not self._dry_run:
-            labels_map = self._gmail_client.ensure_labels(account)
+            try:
+                labels_map = self._gmail_client.ensure_labels(account)
+            except GmailApiError as exc:
+                logger.error(
+                    "Failed to ensure labels for account %s; skipping account this run: %s",
+                    account.email,
+                    exc,
+                )
+                return
         inbox_label = "INBOX"
 
-        message_ids = self._gmail_client.list_messages(
-            account,
-            label_ids=[inbox_label],
-            query=self._search_query,
-            max_results=100,
-        )
+        try:
+            message_ids = self._gmail_client.list_messages(
+                account,
+                label_ids=[inbox_label],
+                query=self._search_query,
+                max_results=100,
+            )
+        except GmailApiError as exc:
+            logger.error(
+                "Failed to list messages for account %s; skipping account this run: %s",
+                account.email,
+                exc,
+            )
+            return
         self._candidates_this_run += len(message_ids)
         new_count = sum(
             1 for mid in message_ids if not processed_repo.is_processed(account.id, mid)
@@ -183,7 +200,16 @@ class EmailProcessor:
             if processed_repo.is_processed(account.id, message_id):
                 continue
 
-            msg = self._gmail_client.get_message(account, message_id)
+            try:
+                msg = self._gmail_client.get_message(account, message_id)
+            except GmailApiError as exc:
+                logger.error(
+                    "Failed to fetch message %s for account %s; skipping message: %s",
+                    message_id,
+                    account.email,
+                    exc,
+                )
+                continue
             is_safe = self._is_safe_sender(msg.sender)
             try:
                 classification = self._classifier.classify(
@@ -220,7 +246,7 @@ class EmailProcessor:
                     gmail_thread_id=msg.thread_id,
                     raw_labels=",".join(msg.labels) if msg.labels else None,
                 )
-            except Exception as exc:
+            except sqlite3.Error as exc:
                 logger.error(
                     "Failed to persist processed email %s for account %s; skipping actions: %s",
                     msg.id,

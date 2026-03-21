@@ -1,8 +1,10 @@
-import types
+import pytest
+from googleapiclient.errors import HttpError
+from httplib2 import Response
 
-from mailpilot.gmail_client import GmailClient, GmailMessage
+from mailpilot.gmail_client import GmailApiError, GmailClient
 from mailpilot.models import Account
-from mailpilot.scheduler import run_once
+from mailpilot.scheduler import run_forever, run_once
 
 
 def _dummy_account() -> Account:
@@ -17,6 +19,10 @@ def _dummy_account() -> Account:
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
+
+
+def _http_error() -> HttpError:
+    return HttpError(Response({"status": "500"}), b'{"error":"simulated"}')
 
 
 def test_gmail_client_label_mapping_ensure_labels(monkeypatch):
@@ -65,6 +71,60 @@ def test_gmail_client_label_mapping_ensure_labels(monkeypatch):
     assert "mailpilot/important" in mapping
 
 
+def test_gmail_client_list_messages_raises_gmail_api_error(monkeypatch):
+    class FailingMessages:
+        def list(self, **kwargs):
+            class Call:
+                def execute(self_inner):
+                    raise _http_error()
+
+            return Call()
+
+    class DummyService:
+        def users(self):
+            return self
+
+        def messages(self):
+            return FailingMessages()
+
+    class DummyCreds:
+        def to_json(self):
+            return "{}"
+
+    monkeypatch.setattr("mailpilot.gmail_client._build_service", lambda *args, **kwargs: (DummyService(), DummyCreds()))
+    client = GmailClient()
+
+    with pytest.raises(GmailApiError):
+        client.list_messages(_dummy_account())
+
+
+def test_gmail_client_get_message_raises_gmail_api_error(monkeypatch):
+    class FailingMessages:
+        def get(self, **kwargs):
+            class Call:
+                def execute(self_inner):
+                    raise _http_error()
+
+            return Call()
+
+    class DummyService:
+        def users(self):
+            return self
+
+        def messages(self):
+            return FailingMessages()
+
+    class DummyCreds:
+        def to_json(self):
+            return "{}"
+
+    monkeypatch.setattr("mailpilot.gmail_client._build_service", lambda *args, **kwargs: (DummyService(), DummyCreds()))
+    client = GmailClient()
+
+    with pytest.raises(GmailApiError):
+        client.get_message(_dummy_account(), "msg-1")
+
+
 def test_scheduler_run_once_uses_email_processor(monkeypatch):
     """
     Ensure run_once delegates to EmailProcessor without raising.
@@ -84,4 +144,15 @@ def test_scheduler_run_once_uses_email_processor(monkeypatch):
     run_once()
 
     assert calls["count"] == 1
+
+
+def test_scheduler_run_forever_reraises_unexpected_errors(monkeypatch):
+    monkeypatch.setattr("mailpilot.scheduler.signal.signal", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "mailpilot.scheduler.run_once",
+        lambda dry_run=False, search_query=None: (_ for _ in ()).throw(ValueError("unexpected")),
+    )
+
+    with pytest.raises(ValueError):
+        run_forever(interval_seconds=1)
 

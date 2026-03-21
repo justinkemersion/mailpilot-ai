@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import logging
 from dataclasses import dataclass
 from typing import Literal, Protocol
@@ -167,7 +166,11 @@ class OpenAIClassifier:
             confidence = payload.get("confidence")
             reason = payload.get("reason") or payload.get("rationale")
         except Exception as exc:
-            logger.error("Failed to parse OpenAI classifier response: %s; raw=%s", exc, text)
+            logger.error(
+                "Failed to parse OpenAI classifier response: %s (response_length=%d)",
+                exc,
+                len(text or ""),
+            )
             raise ClassificationError("Failed to parse classifier response") from exc
 
         VALID_CATEGORIES = (

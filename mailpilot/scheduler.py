@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import signal
-import sys
 import time
 from typing import Callable, Optional
 
+from .ai_classifier import ClassificationError
 from .email_processor import EmailProcessor, RunResult
+from .gmail_client import GmailApiError
 
 
 logger = logging.getLogger(__name__)
@@ -49,8 +51,8 @@ def run_forever(
             result = run_once(dry_run=dry_run, search_query=search_query)
             if on_run_done is not None:
                 on_run_done(result)
-        except Exception as exc:  # defensive; log and continue
-            logger.exception("Error during scheduled run: %s", exc)
+        except (GmailApiError, ClassificationError, sqlite3.Error, RuntimeError) as exc:
+            logger.exception("Recoverable error during scheduled run: %s", exc)
         elapsed = time.time() - start
         sleep_for = max(0, interval_seconds - elapsed)
         if sleep_for > 0 and not stop:

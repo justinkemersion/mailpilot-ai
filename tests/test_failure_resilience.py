@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 
-import pytest
-
 from mailpilot.ai_classifier import ClassificationError
 from mailpilot.email_processor import EmailProcessor
+from mailpilot.gmail_client import GmailApiError
 from mailpilot.models import Account
 
 
@@ -62,6 +61,11 @@ class RecordingGmailClient:
         return None
 
 
+class ListFailingGmailClient(RecordingGmailClient):
+    def list_messages(self, account, label_ids=None, query=None, max_results=100):
+        raise GmailApiError("simulated Gmail API outage")
+
+
 def _dummy_account() -> Account:
     from datetime import datetime, timezone
 
@@ -100,6 +104,35 @@ def test_classification_failure_skips_actions(monkeypatch):
     processor.process_all_accounts_once()
 
     # No archive or label operations should have been attempted.
+    assert gmail.archived == []
+    assert gmail.applied_labels == []
+
+
+def test_gmail_list_failure_skips_account_without_crashing(monkeypatch):
+    """
+    If Gmail list_messages fails, processing should skip the account and complete.
+    """
+    from mailpilot import database
+
+    monkeypatch.setenv("MAILPILOT_DB_PATH", ":memory:")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    with database.connection_ctx() as conn:
+        acct_repo = database.AccountRepository(conn)
+        acct_repo.add_or_update("user@example.com", "{}", None)
+
+    gmail = ListFailingGmailClient()
+    processor = EmailProcessor(
+        gmail_client=gmail,
+        classifier=FailingClassifier(),
+        search_query=None,
+    )
+
+    result = processor.process_all_accounts_once()
+
+    assert result.accounts_processed == 1
+    assert result.candidates == 0
+    assert result.processed == 0
     assert gmail.archived == []
     assert gmail.applied_labels == []
 

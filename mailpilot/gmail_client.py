@@ -32,6 +32,10 @@ REQUIRED_LABEL_NAMES = [
 ]
 
 
+class GmailApiError(RuntimeError):
+    """Raised when a Gmail API operation fails."""
+
+
 def add_account_via_oauth() -> None:
     """
     Run the installed-app OAuth flow and persist a new Gmail account.
@@ -52,8 +56,11 @@ def add_account_via_oauth() -> None:
     )
     creds = flow.run_local_server(port=0)
 
-    service = build("gmail", "v1", credentials=creds)
-    profile = service.users().getProfile(userId="me").execute()
+    try:
+        service = build("gmail", "v1", credentials=creds)
+        profile = service.users().getProfile(userId="me").execute()
+    except HttpError as exc:
+        raise GmailApiError(f"Failed to fetch Gmail profile during OAuth setup: {exc}") from exc
     email_address = profile.get("emailAddress")
 
     token_json = creds.to_json()
@@ -128,13 +135,21 @@ class GmailClient:
         """
         service = self._get_service(account)
         labels_resource = service.users().labels()
-        existing = labels_resource.list(userId="me").execute().get("labels", [])
+        try:
+            existing = labels_resource.list(userId="me").execute().get("labels", [])
+        except HttpError as exc:
+            raise GmailApiError(f"Failed to list labels for {account.email}: {exc}") from exc
         name_to_id = {lbl["name"]: lbl["id"] for lbl in existing}
 
         for name in REQUIRED_LABEL_NAMES:
             if name not in name_to_id:
                 body = {"name": name, "labelListVisibility": "labelShow"}
-                created = labels_resource.create(userId="me", body=body).execute()
+                try:
+                    created = labels_resource.create(userId="me", body=body).execute()
+                except HttpError as exc:
+                    raise GmailApiError(
+                        f"Failed to create label '{name}' for {account.email}: {exc}"
+                    ) from exc
                 name_to_id[name] = created["id"]
                 logger.info("Created label %s for account %s", name, account.email)
 
@@ -160,20 +175,24 @@ class GmailClient:
         try:
             response = service.users().messages().list(**kwargs).execute()
         except HttpError as exc:
-            logger.error("Error listing messages for %s: %s", account.email, exc)
-            return []
+            raise GmailApiError(f"Failed to list messages for {account.email}: {exc}") from exc
 
         messages = response.get("messages", [])
         return [m["id"] for m in messages]
 
     def get_message(self, account: Account, message_id: str) -> GmailMessage:
         service = self._get_service(account)
-        msg = (
-            service.users()
-            .messages()
-            .get(userId="me", id=message_id, format="full")
-            .execute()
-        )
+        try:
+            msg = (
+                service.users()
+                .messages()
+                .get(userId="me", id=message_id, format="full")
+                .execute()
+            )
+        except HttpError as exc:
+            raise GmailApiError(
+                f"Failed to fetch message {message_id} for {account.email}: {exc}"
+            ) from exc
 
         headers = {h["name"].lower(): h["value"] for h in msg["payload"].get("headers", [])}
         subject = headers.get("subject")
@@ -240,7 +259,12 @@ class GmailClient:
         if not label_ids:
             # Cache miss — fall back to an API call (first run or cache cleared).
             service = self._get_service(account)
-            labels = service.users().labels().list(userId="me").execute().get("labels", [])
+            try:
+                labels = service.users().labels().list(userId="me").execute().get("labels", [])
+            except HttpError as exc:
+                raise GmailApiError(
+                    f"Failed to refresh labels for important flag on {account.email}: {exc}"
+                ) from exc
             name_to_id = {lbl["name"]: lbl["id"] for lbl in labels}
             for name, lid in name_to_id.items():
                 self._label_cache[(account.id, name)] = lid

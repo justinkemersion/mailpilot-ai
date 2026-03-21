@@ -105,7 +105,7 @@ source .venv/bin/activate
 3. Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 4. Copy and edit the environment file:
@@ -115,6 +115,27 @@ cp .env.example .env
 ```
 
 Fill in `OPENAI_API_KEY` and `GOOGLE_CREDENTIALS_FILE` at minimum.
+
+### Development
+
+Run quality checks locally before opening a PR:
+
+```bash
+ruff check . --select E,F --ignore E501,F401
+pytest -q
+```
+
+Optional type-checking baseline (not yet enforced in CI):
+
+```bash
+mypy mailpilot
+```
+
+If you prefer using `requirements.txt`, it now delegates to `pyproject.toml`:
+
+```bash
+pip install -r requirements.txt
+```
 
 ### Gmail API Setup
 
@@ -239,6 +260,9 @@ Instead of using the internal scheduler, you can schedule periodic runs via cron
 
 - **Missing or invalid Gmail OAuth credentials**  
   If you run `python -m mailpilot.main add-account` and `GOOGLE_CREDENTIALS_FILE` is not set or points to a non-existent file, MailPilot will display a friendly error screen showing the detected value and step-by-step instructions to create the credentials JSON and update your `.env`.
+
+- **Privacy and logs**
+  MailPilot avoids logging raw classifier payloads from OpenAI parse failures, but operational logs can still include email addresses and high-level processing metadata. Treat log files under `data/logs/` as sensitive local data.
 
 ### Roadmap
 

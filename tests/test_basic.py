@@ -1,4 +1,6 @@
-from mailpilot.ai_classifier import OpenAIClassifier
+import pytest
+
+from mailpilot.ai_classifier import ClassificationError, OpenAIClassifier
 
 
 def test_classifier_interface_smoke():
@@ -102,3 +104,34 @@ def test_classifier_noise_schema():
     assert result3.noise is True
     assert result3.noise_type == "security"
     assert result3.category == "important"
+
+
+def test_classifier_parse_failure_logs_no_raw_payload(caplog):
+    class DummyResponse:
+        def __init__(self):
+            class OutputItem:
+                class ContentItem:
+                    text = "this is not json and contains SECRET_TOKEN_12345"
+
+                content = [ContentItem()]
+
+            self.output = [OutputItem()]
+
+    class DummyClient:
+        class Responses:
+            def create(self, *args, **kwargs):  # type: ignore[override]
+                return DummyResponse()
+
+        def __init__(self) -> None:
+            self.responses = self.Responses()
+
+    classifier = OpenAIClassifier(client=DummyClient())
+    with pytest.raises(ClassificationError):
+        classifier.classify(
+            subject="Test subject",
+            sender="test@example.com",
+            body="Body",
+            snippet="Snippet",
+        )
+
+    assert "SECRET_TOKEN_12345" not in caplog.text
