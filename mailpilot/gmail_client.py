@@ -96,12 +96,19 @@ class GmailClient:
 
     def __init__(self) -> None:
         self._label_cache: Dict[Tuple[int, str], str] = {}
+        self._service_cache: Dict[int, object] = {}
+
+    def _get_service(self, account: Account) -> object:
+        """Return a cached Gmail API service for the given account."""
+        if account.id not in self._service_cache:
+            self._service_cache[account.id] = _build_service(account)
+        return self._service_cache[account.id]
 
     def ensure_labels(self, account: Account) -> Dict[str, str]:
         """
         Ensure required labels exist for the account, returning name -> id mapping.
         """
-        service = _build_service(account)
+        service = self._get_service(account)
         labels_resource = service.users().labels()
         existing = labels_resource.list(userId="me").execute().get("labels", [])
         name_to_id = {lbl["name"]: lbl["id"] for lbl in existing}
@@ -125,7 +132,7 @@ class GmailClient:
         query: Optional[str] = None,
         max_results: int = 100,
     ) -> List[str]:
-        service = _build_service(account)
+        service = self._get_service(account)
         kwargs = {"userId": "me", "maxResults": max_results}
         if label_ids:
             kwargs["labelIds"] = label_ids
@@ -142,7 +149,7 @@ class GmailClient:
         return [m["id"] for m in messages]
 
     def get_message(self, account: Account, message_id: str) -> GmailMessage:
-        service = _build_service(account)
+        service = self._get_service(account)
         msg = (
             service.users()
             .messages()
@@ -174,7 +181,7 @@ class GmailClient:
         labels_to_add: Optional[List[str]] = None,
         labels_to_remove: Optional[List[str]] = None,
     ) -> None:
-        service = _build_service(account)
+        service = self._get_service(account)
         modify_body: Dict[str, List[str]] = {}
         if labels_to_add:
             modify_body["addLabelIds"] = labels_to_add
@@ -201,16 +208,29 @@ class GmailClient:
 
     def flag_important(self, account: Account, message_id: str) -> None:
         """
-        Apply both Gmail IMPORTANT and mailpilot/important labels, if available.
+        Apply both Gmail IMPORTANT and mailpilot/important labels, using
+        the label cache populated by ensure_labels when available.
         """
-        service = _build_service(account)
-        labels = service.users().labels().list(userId="me").execute().get("labels", [])
-        name_to_id = {lbl["name"]: lbl["id"] for lbl in labels}
         label_ids: List[str] = []
-        if "IMPORTANT" in name_to_id:
-            label_ids.append(name_to_id["IMPORTANT"])
-        if "mailpilot/important" in name_to_id:
-            label_ids.append(name_to_id["mailpilot/important"])
+        important_id = self._label_cache.get((account.id, "IMPORTANT"))
+        if important_id:
+            label_ids.append(important_id)
+        mp_important_id = self._label_cache.get((account.id, "mailpilot/important"))
+        if mp_important_id:
+            label_ids.append(mp_important_id)
+
+        if not label_ids:
+            # Cache miss — fall back to an API call (first run or cache cleared).
+            service = self._get_service(account)
+            labels = service.users().labels().list(userId="me").execute().get("labels", [])
+            name_to_id = {lbl["name"]: lbl["id"] for lbl in labels}
+            for name, lid in name_to_id.items():
+                self._label_cache[(account.id, name)] = lid
+            if "IMPORTANT" in name_to_id:
+                label_ids.append(name_to_id["IMPORTANT"])
+            if "mailpilot/important" in name_to_id:
+                label_ids.append(name_to_id["mailpilot/important"])
+
         if label_ids:
             self.apply_labels(account, message_id, labels_to_add=label_ids, labels_to_remove=None)
 
@@ -283,7 +303,9 @@ class SafeGmailClient:
 
 def _extract_body(payload: dict) -> Optional[str]:
     """
-    Extract a best-effort text body from a Gmail message payload.
+    Extract a best-effort text body from a Gmail message payload,
+    recursing into nested multipart structures (e.g. multipart/mixed
+    containing multipart/alternative).
     """
 
     def _decode_part(part: dict) -> Optional[str]:
@@ -293,20 +315,27 @@ def _extract_body(payload: dict) -> Optional[str]:
         decoded_bytes = base64.urlsafe_b64decode(data.encode("utf-8"))
         return decoded_bytes.decode("utf-8", errors="ignore")
 
-    if "parts" in payload:
-        for part in payload["parts"]:
-            mime_type = part.get("mimeType", "")
-            if mime_type == "text/plain":
-                text = _decode_part(part)
-                if text:
-                    return text
-        for part in payload["parts"]:
-            mime_type = part.get("mimeType", "")
-            if mime_type == "text/html":
-                text = _decode_part(part)
-                if text:
-                    return text
-    else:
-        return _decode_part(payload)
+    def _collect_parts(node: dict) -> List[dict]:
+        """Flatten all leaf parts from a potentially nested multipart tree."""
+        if "parts" in node:
+            result: List[dict] = []
+            for child in node["parts"]:
+                result.extend(_collect_parts(child))
+            return result
+        return [node]
+
+    parts = _collect_parts(payload)
+
+    for part in parts:
+        if part.get("mimeType", "") == "text/plain":
+            text = _decode_part(part)
+            if text:
+                return text
+
+    for part in parts:
+        if part.get("mimeType", "") == "text/html":
+            text = _decode_part(part)
+            if text:
+                return text
 
     return None
