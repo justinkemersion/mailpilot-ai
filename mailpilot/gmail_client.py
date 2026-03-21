@@ -73,9 +73,11 @@ def _build_credentials(account: Account) -> Credentials:
     return Credentials.from_authorized_user_info(info, scopes=SCOPES)
 
 
-def _build_service(account: Account):
+def _build_service(account: Account) -> Tuple[object, Credentials]:
+    """Build a Gmail API service, returning (service, credentials)."""
     creds = _build_credentials(account)
-    return build("gmail", "v1", credentials=creds, cache_discovery=False)
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    return service, creds
 
 
 @dataclass
@@ -97,12 +99,28 @@ class GmailClient:
     def __init__(self) -> None:
         self._label_cache: Dict[Tuple[int, str], str] = {}
         self._service_cache: Dict[int, object] = {}
+        self._creds_cache: Dict[int, Tuple[Credentials, str]] = {}
 
     def _get_service(self, account: Account) -> object:
         """Return a cached Gmail API service for the given account."""
         if account.id not in self._service_cache:
-            self._service_cache[account.id] = _build_service(account)
+            service, creds = _build_service(account)
+            self._service_cache[account.id] = service
+            self._creds_cache[account.id] = (creds, account.token_json)
         return self._service_cache[account.id]
+
+    def get_refreshed_tokens(self) -> Dict[int, str]:
+        """
+        Return {account_id: new_token_json} for any credentials that were
+        refreshed since the service was built. Call after a processing run
+        to persist updated tokens.
+        """
+        updated: Dict[int, str] = {}
+        for account_id, (creds, original_json) in self._creds_cache.items():
+            current_json = creds.to_json()
+            if current_json != original_json:
+                updated[account_id] = current_json
+        return updated
 
     def ensure_labels(self, account: Account) -> Dict[str, str]:
         """
@@ -282,6 +300,10 @@ class SafeGmailClient:
 
     def flag_important(self, account: Account, message_id: str) -> None:
         self._inner.flag_important(account, message_id)
+
+    def get_refreshed_tokens(self) -> Dict[int, str]:
+        getter = getattr(self._inner, "get_refreshed_tokens", None)
+        return getter() if getter else {}
 
     # Explicitly forbidden operations
 

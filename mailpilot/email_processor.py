@@ -96,6 +96,21 @@ class EmailProcessor:
         """
         self._dry_run = True
 
+    def _persist_refreshed_tokens(self, account_repo: AccountRepository) -> None:
+        """Save any OAuth tokens that were auto-refreshed during this run."""
+        getter = getattr(self._gmail_client, "get_refreshed_tokens", None)
+        if getter is None:
+            return
+        refreshed = getter()
+        for account_id, new_token_json in refreshed.items():
+            account = account_repo.get_by_id(account_id)
+            if account:
+                account_repo.update_token(account_id, new_token_json)
+                logger.info(
+                    "Persisted refreshed OAuth token for account %s",
+                    account.email,
+                )
+
     def process_all_accounts_once(self) -> RunResult:
         # Reset per-run counters for rate limiting and stats
         self._archives_this_run = 0
@@ -122,6 +137,8 @@ class EmailProcessor:
 
             for account in accounts:
                 self._process_account(account, processed_repo)
+
+            self._persist_refreshed_tokens(account_repo)
 
         return RunResult(
             accounts_processed=len(accounts),

@@ -47,8 +47,12 @@ def test_gmail_client_label_mapping_ensure_labels(monkeypatch):
         def labels(self):
             return DummyLabels()
 
+    class DummyCreds:
+        def to_json(self):
+            return "{}"
+
     def dummy_build(*args, **kwargs):
-        return DummyService()
+        return DummyService(), DummyCreds()
 
     monkeypatch.setattr("mailpilot.gmail_client._build_service", dummy_build)
 

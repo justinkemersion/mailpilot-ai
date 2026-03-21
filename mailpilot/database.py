@@ -322,11 +322,26 @@ class AccountRepository:
         self._conn.commit()
         return self.get_by_email(email)
 
+    def get_by_id(self, account_id: int) -> Optional[Account]:
+        cur = self._conn.cursor()
+        cur.execute("SELECT * FROM accounts WHERE id = ?", (account_id,))
+        row = cur.fetchone()
+        return self._row_to_account(row) if row else None
+
     def get_by_email(self, email: str) -> Optional[Account]:
         cur = self._conn.cursor()
         cur.execute("SELECT * FROM accounts WHERE email = ? AND active = 1", (email,))
         row = cur.fetchone()
         return self._row_to_account(row) if row else None
+
+    def update_token(self, account_id: int, token_json: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        cur = self._conn.cursor()
+        cur.execute(
+            "UPDATE accounts SET token_json = ?, updated_at = ? WHERE id = ?",
+            (token_json, now, account_id),
+        )
+        self._conn.commit()
 
     def list_active(self) -> List[Account]:
         cur = self._conn.cursor()
