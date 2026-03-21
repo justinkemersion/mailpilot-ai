@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from dataclasses import dataclass
@@ -11,7 +12,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
 
 from .config import load_config
-from .database import AccountRepository, get_connection
+from .database import AccountRepository, connection_ctx, get_connection
 from .models import Account
 
 
@@ -57,14 +58,14 @@ def add_account_via_oauth() -> None:
 
     token_json = creds.to_json()
 
-    conn = get_connection()
-    repo = AccountRepository(conn)
-    account = repo.add_or_update(
-        email=email_address,
-        token_json=token_json,
-        display_name=email_address,
-    )
-    logger.info("Added/updated Gmail account: %s (id=%s)", account.email, account.id)
+    with connection_ctx() as conn:
+        repo = AccountRepository(conn)
+        account = repo.add_or_update(
+            email=email_address,
+            token_json=token_json,
+            display_name=email_address,
+        )
+        logger.info("Added/updated Gmail account: %s (id=%s)", account.email, account.id)
 
 
 def _build_credentials(account: Account) -> Credentials:
@@ -284,7 +285,6 @@ def _extract_body(payload: dict) -> Optional[str]:
     """
     Extract a best-effort text body from a Gmail message payload.
     """
-    import base64
 
     def _decode_part(part: dict) -> Optional[str]:
         data = part.get("body", {}).get("data")

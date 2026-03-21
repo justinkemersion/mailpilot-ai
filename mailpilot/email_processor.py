@@ -274,8 +274,12 @@ class EmailProcessor:
             _maybe_add("newsletters")
             if noise_type == "security":
                 _maybe_add("security")
-            # For safe senders, do not auto-archive newsletters.
-            if not is_safe_sender and self._archives_this_run < self._max_archives_per_run:
+            if is_safe_sender:
+                logger.info(
+                    "Safe sender newsletter %s; skipping archive",
+                    msg_id,
+                )
+            elif self._archives_this_run < self._max_archives_per_run:
                 self._gmail_client.archive_message(account, msg_id)
                 self._archives_this_run += 1
             else:
@@ -286,8 +290,12 @@ class EmailProcessor:
                 )
         elif category == "promotions":
             _maybe_add("promotions")
-            # For safe senders, do not auto-archive promotions.
-            if not is_safe_sender and self._archives_this_run < self._max_archives_per_run:
+            if is_safe_sender:
+                logger.info(
+                    "Safe sender promotion %s; skipping archive",
+                    msg_id,
+                )
+            elif self._archives_this_run < self._max_archives_per_run:
                 self._gmail_client.archive_message(account, msg_id)
                 self._archives_this_run += 1
             else:

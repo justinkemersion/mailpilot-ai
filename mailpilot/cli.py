@@ -30,6 +30,43 @@ def _echo_run_summary(result: RunResult | None) -> None:
     )
 
 
+def _build_search_query(
+    query: str | None,
+    newer_than_days: int | None,
+    include_read: bool,
+) -> str | None:
+    """
+    Build a Gmail search query from CLI options, prompting the user for
+    confirmation when the resulting query has no safety bounds.
+    """
+    if query is not None:
+        lower_q = query.lower()
+        has_date_bound = "newer_than:" in lower_q or "after:" in lower_q or "older_than:" in lower_q
+        has_unread = "is:unread" in lower_q
+        if not has_date_bound and not has_unread:
+            typer.confirm(
+                "WARNING: This raw Gmail query has no date or unread filter "
+                "and may scan your entire INBOX. Continue?",
+                abort=True,
+            )
+        return query
+
+    terms: list[str] = []
+    if newer_than_days is not None:
+        terms.append(f"newer_than:{newer_than_days}d")
+    if not include_read:
+        terms.append("is:unread")
+
+    if include_read and newer_than_days is None:
+        typer.confirm(
+            "WARNING: This will scan all messages in your INBOX, "
+            "including old read mail. Continue?",
+            abort=True,
+        )
+
+    return " ".join(terms) if terms else None
+
+
 @app.callback()
 def common() -> None:
     """
@@ -38,7 +75,6 @@ def common() -> None:
     At the moment, configuration and logging are handled in main.py,
     so this is a placeholder for future global options (e.g. --config).
     """
-    # Intentionally empty for now.
     return
 
 
@@ -76,32 +112,7 @@ def run_command(
     """
     config = load_config()
     effective_interval = interval or config.poll_interval_seconds
-
-    # Build Gmail search query based on options.
-    if query is not None:
-        search_query = query
-        lower_q = query.lower()
-        has_date_bound = "newer_than:" in lower_q or "after:" in lower_q or "older_than:" in lower_q
-        has_unread = "is:unread" in lower_q
-        if not has_date_bound and not has_unread:
-            typer.confirm(
-                "WARNING: This raw Gmail query has no date or unread filter and may scan your entire INBOX. Continue?",
-                abort=True,
-            )
-    else:
-        terms = []
-        if newer_than_days is not None:
-            terms.append(f"newer_than:{newer_than_days}d")
-        if not include_read:
-            terms.append("is:unread")
-        search_query = " ".join(terms) if terms else None
-
-        # Red-zone warning: include read mail with no date bound.
-        if include_read and newer_than_days is None:
-            typer.confirm(
-                "WARNING: This will scan all messages in your INBOX, including old read mail. Continue?",
-                abort=True,
-            )
+    search_query = _build_search_query(query, newer_than_days, include_read)
 
     logger.info(
         "Starting MailPilot continuous run (interval=%s, dry_run=%s)",
@@ -142,31 +153,7 @@ def run_once_command(
     """
     Process new emails for all accounts once and exit.
     """
-    # Build Gmail search query based on options.
-    if query is not None:
-        search_query = query
-        lower_q = query.lower()
-        has_date_bound = "newer_than:" in lower_q or "after:" in lower_q or "older_than:" in lower_q
-        has_unread = "is:unread" in lower_q
-        if not has_date_bound and not has_unread:
-            typer.confirm(
-                "WARNING: This raw Gmail query has no date or unread filter and may scan your entire INBOX. Continue?",
-                abort=True,
-            )
-    else:
-        terms = []
-        if newer_than_days is not None:
-            terms.append(f"newer_than:{newer_than_days}d")
-        if not include_read:
-            terms.append("is:unread")
-        search_query = " ".join(terms) if terms else None
-
-        # Red-zone warning: include read mail with no date bound.
-        if include_read and newer_than_days is None:
-            typer.confirm(
-                "WARNING: This will scan all messages in your INBOX, including old read mail. Continue?",
-                abort=True,
-            )
+    search_query = _build_search_query(query, newer_than_days, include_read)
 
     logger.info(
         "Running MailPilot once (dry_run=%s, search_query=%s)", dry_run, search_query or "<default>"
@@ -227,11 +214,11 @@ def summarize_command(
     """
     Show a summary of recent categorized emails.
     """
-    from .database import ProcessedEmailRepository, get_connection
+    from .database import ProcessedEmailRepository, connection_ctx
 
-    conn = get_connection()
-    repo = ProcessedEmailRepository(conn)
-    summary = repo.summarize_recent(limit=limit)
+    with connection_ctx() as conn:
+        repo = ProcessedEmailRepository(conn)
+        summary = repo.summarize_recent(limit=limit)
 
     typer.echo("Recent categorized emails:")
     for item in summary:

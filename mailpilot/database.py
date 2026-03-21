@@ -261,8 +261,10 @@ def connection_ctx() -> Iterator[sqlite3.Connection]:
     try:
         yield conn
         conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
     finally:
-        # Keep the global in-memory connection alive for the duration of the process
         if conn is not _IN_MEMORY_CONN:
             conn.close()
 
