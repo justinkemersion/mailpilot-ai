@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mailpilot"
+version = "0.1.0"
+description = "AI-powered Gmail inbox manager"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+dependencies = [
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "python-dotenv>=1.0.0",
+    "google-api-python-client>=2.0.0",
+    "google-auth-httplib2>=0.2.0",
+    "google-auth-oauthlib>=1.0.0",
+    "openai>=1.0.0",
+    "requests>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+mailpilot = "mailpilot.main:main"
+
+[tool.setuptools.packages.find]
+include = ["mailpilot*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+]
+ignore = [
+    "E501", # line too long (handled by formatter)
+]

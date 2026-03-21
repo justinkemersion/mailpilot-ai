@@ -9,20 +9,27 @@ from dotenv import load_dotenv
 _ROOT_DIR = Path(__file__).resolve().parent.parent
 _DATA_DIR = _ROOT_DIR / "data"
 
+_dotenv_loaded = False
+
 
 def _load_dotenv() -> None:
     """
-    Load environment variables from a .env file if present.
+    Load environment variables from a .env file if present (once per process).
 
     This is safe in production because real env vars take precedence.
     """
-    # During pytest runs, avoid re-loading .env so tests can control
+    global _dotenv_loaded
+    if _dotenv_loaded:
+        return
+    # During pytest runs, avoid loading .env so tests can control
     # configuration purely via environment variables.
     if os.getenv("PYTEST_CURRENT_TEST"):
+        _dotenv_loaded = True
         return
     env_path = _ROOT_DIR / ".env"
     if env_path.exists():
         load_dotenv(env_path)
+    _dotenv_loaded = True
 
 
 @dataclass(frozen=True)
