@@ -186,6 +186,40 @@ def add_account_command() -> None:
     add_account_via_oauth()
 
 
+@app.command("db-check")
+def db_check_command() -> None:
+    """
+    Verify SQLite database integrity, foreign keys, and multi-account isolation.
+    Does not require OPENAI_API_KEY (only reads MAILPILOT_DB_PATH / default data path).
+    """
+    from .database import check_database_at_path, resolve_database_file_path
+
+    path = resolve_database_file_path()
+    report = check_database_at_path(path)
+
+    typer.echo(f"Database: {report.db_path_display}")
+    typer.echo(f"Integrity: {report.integrity}")
+    typer.echo(f"Foreign key violations: {report.foreign_key_violation_count}")
+    typer.echo(f"Active accounts: {report.active_accounts}")
+    typer.echo(f"Processed emails (total): {report.processed_emails_total}")
+    for acc_id, email, n in report.account_summaries:
+        typer.echo(f"  account id={acc_id} {email!r}: {n} processed row(s)")
+    typer.echo(f"Orphan processed rows: {report.orphan_processed_count}")
+    typer.echo(f"Duplicate (account, message) groups: {report.duplicate_key_groups}")
+    if report.cross_account_message_id_count:
+        typer.echo(
+            f"Gmail message ids shared across accounts: {report.cross_account_message_id_count} "
+            "(informational)"
+        )
+    for msg in report.messages:
+        typer.secho(msg, fg=typer.colors.YELLOW if report.ok else typer.colors.RED)
+    if report.ok:
+        typer.secho("db-check: OK", fg=typer.colors.GREEN)
+    else:
+        typer.secho("db-check: FAILED", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+
 @app.command("summarize")
 def summarize_command(
     limit: int = typer.Option(20, help="Number of recent important emails to show."),

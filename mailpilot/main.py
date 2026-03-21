@@ -36,6 +36,15 @@ def main() -> None:
     """
     Entrypoint for MailPilot CLI.
     """
+    # db-check only needs the database file path, not OpenAI or Gmail secrets.
+    if len(sys.argv) > 1 and sys.argv[1] == "db-check":
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+        )
+        typer.main.get_command(cli_app)()
+        return
+
     try:
         config = load_config()
         _configure_logging(config)

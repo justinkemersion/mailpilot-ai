@@ -212,6 +212,12 @@ If your raw query does **not** include a date bound (e.g. `newer_than:` or `afte
   - **`MAILPILOT_ARCHIVE_SECURITY_NOISE=1`** – Archive routine security noise (e.g. “2FA backup codes generated”, “You allowed X app”). Truly critical security alerts (e.g. new sign-in from unknown device) remain classified as important and stay in the inbox. Archived security messages are labeled `security` so you can find them.
   - **`MAILPILOT_ARCHIVE_RECEIPTS=1`** – Archive receipts and transactional confirmations (same per-run limits as newsletters). Add these to `.env` when you want to ease into a quieter inbox.
 
+- **Check the SQLite database** (integrity, foreign keys, per-account processed counts). Does **not** require `OPENAI_API_KEY`; uses `MAILPILOT_DB_PATH` or the default `data/mailpilot.db`:
+
+```bash
+python -m mailpilot.main db-check
+```
+
 - **Summarize recent categorized emails**:
 
 ```bash
