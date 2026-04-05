@@ -320,7 +320,10 @@ class AccountRepository:
             (email, display_name, token_json, now, now),
         )
         self._conn.commit()
-        return self.get_by_email(email)
+        account = self.get_by_email(email)
+        if account is None:
+            raise RuntimeError(f"Account row missing after upsert for {email!r}")
+        return account
 
     def get_by_id(self, account_id: int) -> Optional[Account]:
         cur = self._conn.cursor()

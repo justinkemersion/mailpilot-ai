@@ -126,10 +126,10 @@ def _build_credentials(account: Account) -> Credentials:
     return Credentials.from_authorized_user_info(info, scopes=SCOPES)
 
 
-def _build_service(account: Account) -> Tuple[object, Credentials]:
+def _build_service(account: Account) -> Tuple[Any, Credentials]:
     """Build a Gmail API service, returning (service, credentials)."""
     creds = _build_credentials(account)
-    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    service: Any = build("gmail", "v1", credentials=creds, cache_discovery=False)
     return service, creds
 
 
@@ -151,7 +151,7 @@ class GmailClient:
 
     def __init__(self) -> None:
         self._label_cache: Dict[Tuple[int, str], str] = {}
-        self._service_cache: Dict[int, object] = {}
+        self._service_cache: Dict[int, Any] = {}
         self._creds_cache: Dict[int, Tuple[Credentials, str]] = {}
 
     def _clear_account_session(self, account_id: int) -> None:
@@ -184,7 +184,7 @@ class GmailClient:
                 ) from exc
             raise GmailApiError(f"{action_desc} for {account.email}: {exc}") from exc
 
-    def _get_service(self, account: Account) -> object:
+    def _get_service(self, account: Account) -> Any:
         """Return a cached Gmail API service for the given account."""
         if account.id not in self._service_cache:
             service, creds = _build_service(account)

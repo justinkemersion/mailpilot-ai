@@ -36,7 +36,7 @@ def run_forever(
     """
     stop = False
 
-    def _handle_signal(signum: int, frame) -> None:  # type: ignore[override]
+    def _handle_signal(signum: int, frame: object) -> None:
         nonlocal stop
         logger.info("Received signal %s, shutting down gracefully", signum)
         stop = True

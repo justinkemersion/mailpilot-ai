@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from openai import OpenAI
 
@@ -143,7 +143,9 @@ class OpenAIClassifier:
                     instructions=SYSTEM_PROMPT.strip(),
                     input=user_input,
                 )
-                text = response.output[0].content[0].text
+                # OpenAI response stubs use a wide output union; runtime shape is fixed for this call.
+                resp: Any = response
+                text = resp.output[0].content[0].text
             else:
                 chat = self._client.chat.completions.create(
                     model=self._model,
@@ -195,6 +197,7 @@ class OpenAIClassifier:
             "unknown",
         )
 
+        category: Category
         if noise:
             noise_type = (noise_type or "unknown").strip().lower()
             if noise_type not in VALID_NOISE_TYPES:
@@ -203,13 +206,15 @@ class OpenAIClassifier:
                 noise_type, archive_security_noise=get_archive_security_noise()
             )
         else:
-            category = raw_category if isinstance(raw_category, str) else None
-            if not category or category not in VALID_CATEGORIES:
+            raw_cat = raw_category if isinstance(raw_category, str) else None
+            if not raw_cat or raw_cat not in VALID_CATEGORIES:
                 logger.warning(
                     "Model returned unknown category %s for non-noise; defaulting to important",
                     raw_category,
                 )
                 category = "important"
+            else:
+                category = cast(Category, raw_cat)
 
         return ClassifiedEmail(
             category=category,
