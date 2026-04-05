@@ -3,9 +3,11 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TypeVar
 
+from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -36,6 +38,42 @@ class GmailApiError(RuntimeError):
     """Raised when a Gmail API operation fails."""
 
 
+class GmailAuthError(GmailApiError):
+    """
+    Raised when stored Gmail OAuth credentials cannot be used (expired refresh
+    token, revoked consent, etc.). User should run add-account again.
+    """
+
+
+REAUTH_USER_HINT = (
+    "Re-authenticate with: python -m mailpilot.main add-account "
+    "(sign in again for that Gmail address). "
+    "OAuth clients in Google 'Testing' mode often require weekly re-consent."
+)
+
+
+def _http_error_requires_reauth(exc: HttpError) -> bool:
+    status = getattr(exc.resp, "status", None)
+    if status is None:
+        return False
+    if status == 401:
+        return True
+    if status == 403:
+        try:
+            raw = getattr(exc, "content", b"") or b""
+            text = raw.decode("utf-8", errors="replace").lower()
+            if "invalid_grant" in text or "invalid_credentials" in text:
+                return True
+            if "token" in text and ("expired" in text or "revoked" in text):
+                return True
+        except Exception:
+            return False
+    return False
+
+
+_T = TypeVar("_T")
+
+
 def add_account_via_oauth() -> None:
     """
     Run the installed-app OAuth flow and persist a new Gmail account.
@@ -59,7 +97,15 @@ def add_account_via_oauth() -> None:
     try:
         service = build("gmail", "v1", credentials=creds)
         profile = service.users().getProfile(userId="me").execute()
+    except RefreshError as exc:
+        raise GmailAuthError(
+            f"Gmail rejected the new OAuth session after sign-in. {REAUTH_USER_HINT}"
+        ) from exc
     except HttpError as exc:
+        if _http_error_requires_reauth(exc):
+            raise GmailAuthError(
+                f"Gmail rejected credentials right after OAuth. {REAUTH_USER_HINT}"
+            ) from exc
         raise GmailApiError(f"Failed to fetch Gmail profile during OAuth setup: {exc}") from exc
     email_address = profile.get("emailAddress")
 
@@ -108,6 +154,36 @@ class GmailClient:
         self._service_cache: Dict[int, object] = {}
         self._creds_cache: Dict[int, Tuple[Credentials, str]] = {}
 
+    def _clear_account_session(self, account_id: int) -> None:
+        """Drop cached Google client so the next call rebuilds credentials."""
+        self._service_cache.pop(account_id, None)
+        self._creds_cache.pop(account_id, None)
+        stale = [k for k in self._label_cache if k[0] == account_id]
+        for key in stale:
+            del self._label_cache[key]
+
+    def _run_gmail(
+        self,
+        account: Account,
+        action_desc: str,
+        call: Callable[[], _T],
+    ) -> _T:
+        try:
+            return call()
+        except RefreshError as exc:
+            self._clear_account_session(account.id)
+            raise GmailAuthError(
+                f"{account.email}: Gmail OAuth token could not be refreshed. {REAUTH_USER_HINT}"
+            ) from exc
+        except HttpError as exc:
+            if _http_error_requires_reauth(exc):
+                self._clear_account_session(account.id)
+                raise GmailAuthError(
+                    f"{account.email}: Gmail rejected the saved sign-in "
+                    f"(HTTP {getattr(exc.resp, 'status', '?')}). {REAUTH_USER_HINT}"
+                ) from exc
+            raise GmailApiError(f"{action_desc} for {account.email}: {exc}") from exc
+
     def _get_service(self, account: Account) -> object:
         """Return a cached Gmail API service for the given account."""
         if account.id not in self._service_cache:
@@ -135,21 +211,25 @@ class GmailClient:
         """
         service = self._get_service(account)
         labels_resource = service.users().labels()
-        try:
-            existing = labels_resource.list(userId="me").execute().get("labels", [])
-        except HttpError as exc:
-            raise GmailApiError(f"Failed to list labels for {account.email}: {exc}") from exc
+        existing = self._run_gmail(
+            account,
+            "list labels",
+            lambda: labels_resource.list(userId="me").execute().get("labels", []),
+        )
         name_to_id = {lbl["name"]: lbl["id"] for lbl in existing}
 
         for name in REQUIRED_LABEL_NAMES:
             if name not in name_to_id:
                 body = {"name": name, "labelListVisibility": "labelShow"}
-                try:
-                    created = labels_resource.create(userId="me", body=body).execute()
-                except HttpError as exc:
-                    raise GmailApiError(
-                        f"Failed to create label '{name}' for {account.email}: {exc}"
-                    ) from exc
+
+                def _create(b: dict[str, str] = body) -> dict[str, Any]:
+                    return labels_resource.create(userId="me", body=b).execute()
+
+                created = self._run_gmail(
+                    account,
+                    f"create label '{name}'",
+                    _create,
+                )
                 name_to_id[name] = created["id"]
                 logger.info("Created label %s for account %s", name, account.email)
 
@@ -172,27 +252,25 @@ class GmailClient:
         if query:
             kwargs["q"] = query
 
-        try:
-            response = service.users().messages().list(**kwargs).execute()
-        except HttpError as exc:
-            raise GmailApiError(f"Failed to list messages for {account.email}: {exc}") from exc
+        response = self._run_gmail(
+            account,
+            "list messages",
+            lambda: service.users().messages().list(**kwargs).execute(),
+        )
 
         messages = response.get("messages", [])
         return [m["id"] for m in messages]
 
     def get_message(self, account: Account, message_id: str) -> GmailMessage:
         service = self._get_service(account)
-        try:
-            msg = (
-                service.users()
-                .messages()
-                .get(userId="me", id=message_id, format="full")
-                .execute()
-            )
-        except HttpError as exc:
-            raise GmailApiError(
-                f"Failed to fetch message {message_id} for {account.email}: {exc}"
-            ) from exc
+        msg = self._run_gmail(
+            account,
+            f"fetch message {message_id}",
+            lambda: service.users()
+            .messages()
+            .get(userId="me", id=message_id, format="full")
+            .execute(),
+        )
 
         headers = {h["name"].lower(): h["value"] for h in msg["payload"].get("headers", [])}
         subject = headers.get("subject")
@@ -229,10 +307,17 @@ class GmailClient:
             return
 
         try:
-            service.users().messages().modify(
-                userId="me", id=message_id, body=modify_body
-            ).execute()
-        except HttpError as exc:
+            self._run_gmail(
+                account,
+                f"modify labels for message {message_id}",
+                lambda: service.users()
+                .messages()
+                .modify(userId="me", id=message_id, body=modify_body)
+                .execute(),
+            )
+        except GmailAuthError:
+            raise
+        except GmailApiError as exc:
             logger.error(
                 "Failed to modify labels for message %s account %s: %s",
                 message_id,
@@ -259,12 +344,11 @@ class GmailClient:
         if not label_ids:
             # Cache miss — fall back to an API call (first run or cache cleared).
             service = self._get_service(account)
-            try:
-                labels = service.users().labels().list(userId="me").execute().get("labels", [])
-            except HttpError as exc:
-                raise GmailApiError(
-                    f"Failed to refresh labels for important flag on {account.email}: {exc}"
-                ) from exc
+            labels = self._run_gmail(
+                account,
+                "list labels for important flag",
+                lambda: service.users().labels().list(userId="me").execute().get("labels", []),
+            )
             name_to_id = {lbl["name"]: lbl["id"] for lbl in labels}
             for name, lid in name_to_id.items():
                 self._label_cache[(account.id, name)] = lid

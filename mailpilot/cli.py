@@ -28,6 +28,17 @@ def _echo_run_summary(result: RunResult | None) -> None:
         f"{result.candidates} message(s) in inbox, {result.processed} processed. "
         f"{prefix}Labels: {result.labels_applied}, archived: {result.archived}, spam: {result.spam_marked}."
     )
+    if result.accounts_needing_reauth:
+        emails = ", ".join(result.accounts_needing_reauth)
+        typer.secho(
+            f"\nGmail sign-in expired or revoked for: {emails}",
+            fg=typer.colors.YELLOW,
+        )
+        typer.secho(
+            "Run: python -m mailpilot.main add-account — sign in again for each address above. "
+            "Google OAuth apps in 'Testing' mode usually need re-consent about once a week.",
+            fg=typer.colors.YELLOW,
+        )
 
 
 def _build_search_query(

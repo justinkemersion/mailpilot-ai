@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from email.utils import parseaddr
 from typing import List
 
@@ -20,7 +20,7 @@ from .database import (
     ProcessedEmailRepository,
     connection_ctx,
 )
-from .gmail_client import GmailApiError, GmailClient, SafeGmailClient
+from .gmail_client import GmailApiError, GmailAuthError, GmailClient, SafeGmailClient
 from .models import Account
 
 
@@ -38,6 +38,7 @@ class RunResult:
     archived: int
     spam_marked: int
     dry_run: bool
+    accounts_needing_reauth: list[str] = field(default_factory=list)
 
 
 class EmailProcessor:
@@ -74,6 +75,15 @@ class EmailProcessor:
         # Preload safe sender configuration from environment.
         self._safe_sender_domains = set(get_safe_sender_domains())
         self._safe_senders = set(get_safe_senders())
+        self._accounts_needing_reauth: list[str] = []
+
+    def _record_reauth_skip(self, account: Account) -> None:
+        if account.email not in self._accounts_needing_reauth:
+            self._accounts_needing_reauth.append(account.email)
+        logger.error(
+            "%s — skipping this account until you sign in again (python -m mailpilot.main add-account).",
+            account.email,
+        )
 
     def _is_safe_sender(self, sender: str | None) -> bool:
         if not sender:
@@ -119,6 +129,7 @@ class EmailProcessor:
         self._label_actions_this_run = 0
         self._candidates_this_run = 0
         self._messages_processed_this_run = 0
+        self._accounts_needing_reauth = []
         with connection_ctx() as conn:
             account_repo = AccountRepository(conn)
             processed_repo = ProcessedEmailRepository(conn)
@@ -134,6 +145,7 @@ class EmailProcessor:
                     archived=0,
                     spam_marked=0,
                     dry_run=self._dry_run,
+                    accounts_needing_reauth=[],
                 )
 
             for account in accounts:
@@ -149,6 +161,7 @@ class EmailProcessor:
             archived=self._archives_this_run,
             spam_marked=self._spam_marks_this_run,
             dry_run=self._dry_run,
+            accounts_needing_reauth=list(self._accounts_needing_reauth),
         )
 
     def _process_account(
@@ -162,6 +175,10 @@ class EmailProcessor:
         if not self._dry_run:
             try:
                 labels_map = self._gmail_client.ensure_labels(account)
+            except GmailAuthError as exc:
+                logger.error("Gmail sign-in required for %s: %s", account.email, exc)
+                self._record_reauth_skip(account)
+                return
             except GmailApiError as exc:
                 logger.error(
                     "Failed to ensure labels for account %s; skipping account this run: %s",
@@ -178,6 +195,10 @@ class EmailProcessor:
                 query=self._search_query,
                 max_results=100,
             )
+        except GmailAuthError as exc:
+            logger.error("Gmail sign-in required for %s: %s", account.email, exc)
+            self._record_reauth_skip(account)
+            return
         except GmailApiError as exc:
             logger.error(
                 "Failed to list messages for account %s; skipping account this run: %s",
@@ -202,6 +223,10 @@ class EmailProcessor:
 
             try:
                 msg = self._gmail_client.get_message(account, message_id)
+            except GmailAuthError as exc:
+                logger.error("Gmail sign-in required for %s: %s", account.email, exc)
+                self._record_reauth_skip(account)
+                break
             except GmailApiError as exc:
                 logger.error(
                     "Failed to fetch message %s for account %s; skipping message: %s",
@@ -255,14 +280,19 @@ class EmailProcessor:
                 )
                 continue
 
-            self._apply_actions(
-                account=account,
-                msg_id=msg.id,
-                labels_map=labels_map,
-                category=classification.category,
-                is_safe_sender=is_safe,
-                noise_type=classification.noise_type,
-            )
+            try:
+                self._apply_actions(
+                    account=account,
+                    msg_id=msg.id,
+                    labels_map=labels_map,
+                    category=classification.category,
+                    is_safe_sender=is_safe,
+                    noise_type=classification.noise_type,
+                )
+            except GmailAuthError as exc:
+                logger.error("Gmail sign-in required for %s: %s", account.email, exc)
+                self._record_reauth_skip(account)
+                break
             self._messages_processed_this_run += 1
 
     def _apply_actions(
