@@ -36,7 +36,10 @@ to ensure idempotent behavior.
   - Archive newsletters and promotions.
   - Flag important emails with an `IMPORTANT` / `mailpilot/important` label.
 - **Idempotent processing** using SQLite to track processed messages and avoid duplicates.
-- **Typer-based CLI** for running the processor, adding accounts, and summarizing recent emails.
+- **Typer-based CLI** for running the processor, adding accounts, database checks, and summaries.
+- **Safe senders** via environment variables so trusted addresses are not marked spam and are treated gently for archives.
+- **Per-run caps** on archives, spam marks, and label changes to limit blast radius.
+- **Graceful Gmail re-auth**: expired or revoked OAuth for one account skips that account only; others keep running, with a clear CLI summary.
 
 ### Architecture Overview
 
@@ -108,30 +111,69 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
+This registers the **`mailpilot`** command on your PATH (same program as `python -m mailpilot.main`).
+
 4. Copy and edit the environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-Fill in `OPENAI_API_KEY` and `GOOGLE_CREDENTIALS_FILE` at minimum.
+Fill in `OPENAI_API_KEY` and `GOOGLE_CREDENTIALS_FILE` at minimum. All variables are documented in [Configuration (environment variables)](#configuration-environment-variables) and in [`.env.example`](.env.example).
+
+### Invoking the CLI
+
+Use either form (after install):
+
+- **`mailpilot …`** — short; requires an activated venv or a PATH that includes the install location.
+- **`python -m mailpilot.main …`** — explicit; reliable from the repo with `python` pointing at your venv.
+
+```bash
+mailpilot --help
+# or
+python -m mailpilot.main --help
+```
+
+Every subcommand below works with both prefixes.
+
+### Configuration (environment variables)
+
+| Variable | Required | Default | Purpose |
+|----------|----------|---------|---------|
+| `OPENAI_API_KEY` | Yes for `run`, `run-once`, and commands that load full app config | — | OpenAI API key for classification. |
+| `GOOGLE_CREDENTIALS_FILE` | Yes for `add-account` | — | Path to Google OAuth **client** JSON (Desktop app type). |
+| `MAILPILOT_DB_PATH` | No | `data/mailpilot.db` | SQLite database path. |
+| `MAILPILOT_POLL_INTERVAL_SECONDS` | No | `300` | Default seconds between loops for `run` (overridden by `--interval`). |
+| `MAILPILOT_LOG_LEVEL` | No | `INFO` | Logging level (`DEBUG`, `INFO`, …). |
+| `MAILPILOT_OPENAI_MODEL` | No | `gpt-4.1-mini` | Model name for the classifier. |
+| `MAILPILOT_ARCHIVE_SECURITY_NOISE` | No | off | Set to `1`, `true`, or `yes` to archive routine security “noise” (see CLI reference). |
+| `MAILPILOT_ARCHIVE_RECEIPTS` | No | off | Set to `1`, `true`, or `yes` to archive receipts / transactional mail. |
+| `MAILPILOT_SAFE_SENDER_DOMAINS` | No | empty | Comma-separated domains; matching senders skip spam and get gentler archive behavior. |
+| `MAILPILOT_SAFE_SENDERS` | No | empty | Comma-separated full email addresses; same rules as domains. |
+| `MAILPILOT_MAX_ARCHIVES_PER_RUN` | No | `30` | Maximum archive actions per run. |
+| `MAILPILOT_MAX_SPAM_MARKS_PER_RUN` | No | `10` | Maximum spam label applications per run. |
+| `MAILPILOT_MAX_LABEL_ACTIONS_PER_RUN` | No | `200` | Maximum Gmail label modifications per run. |
+
+`db-check` does **not** require `OPENAI_API_KEY`; it only resolves `MAILPILOT_DB_PATH` (or the default DB path).
 
 ### Development
 
-Run quality checks locally before opening a PR:
+Run quality checks locally:
 
 ```bash
 ruff check . --select E,F --ignore E501,F401
 pytest -q
 ```
 
-Optional type-checking baseline (not yet enforced in CI):
+Optional type checking (not enforced in CI):
 
 ```bash
 mypy mailpilot
 ```
 
-If you prefer using `requirements.txt`, it now delegates to `pyproject.toml`:
+GitHub Actions runs lint and tests on push and pull requests (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+
+If you prefer `requirements.txt`, it installs the editable package from `pyproject.toml`:
 
 ```bash
 pip install -r requirements.txt
@@ -148,121 +190,125 @@ pip install -r requirements.txt
 6. Download the client credentials JSON file and store it securely on your machine.
 7. Set `GOOGLE_CREDENTIALS_FILE` in `.env` to the full path of that JSON file.
 
-MailPilot uses the installed-app flow; when you run `add-account`, your browser will open and ask for consent. Tokens are stored in SQLite and refreshed automatically by the Google client libraries.
+MailPilot uses the installed-app flow; when you run `add-account`, your browser opens for consent. Access and refresh tokens are stored in SQLite and are **refreshed automatically** while Google still accepts the refresh token.
+
+**Testing mode and weekly re-consent:** On the **Testing** user type, Google typically expires refresh tokens after **about seven days**. When refresh fails, MailPilot **skips only the affected account(s)**, logs a clear error, and **continues with accounts that still authenticate**. After `run` or `run-once`, a **yellow** summary lists addresses that need sign-in again; run `add-account` once per address (re-adding updates the stored token for that email).
 
 ### OpenAI Setup
 
 1. Create an OpenAI account if you do not have one.
 2. Generate an API key from the OpenAI dashboard.
 3. Set `OPENAI_API_KEY` in `.env`.
-4. Optionally set `MAILPILOT_OPENAI_MODEL` in `.env` to control which OpenAI model is used for classification (defaults to `gpt-4.1-mini`).
+4. Optionally set `MAILPILOT_OPENAI_MODEL` in `.env` (see table above).
 
-### Running MailPilot
+### CLI reference
 
-All commands are invoked through the `main.py` entrypoint:
+Commands apply to **all active accounts** in the database unless Gmail authentication fails for some (those are skipped; see Gmail setup).
 
-```bash
-python -m mailpilot.main --help
-```
+#### `add-account`
 
-- **Add a Gmail account**:
+Runs the desktop OAuth flow and saves tokens to SQLite for the Google account you sign into.
 
 ```bash
-python -m mailpilot.main add-account
+mailpilot add-account
 ```
 
-- **Run once (cron-friendly)**:
+Requires `GOOGLE_CREDENTIALS_FILE` and a valid client secrets JSON.
+
+#### `run-once`
+
+Processes each active account once and prints a summary: accounts touched, inbox candidates, processed count, label/archive/spam counts. If any account needs re-auth, a **yellow** follow-up lists those emails and reminds you to run `add-account` again.
+
+| Option | Description |
+|--------|-------------|
+| `--dry-run` | Classify and log what would happen; **no** Gmail label/archive changes. |
+| `--newer-than-days N` | Adds `newer_than:Nd` to the search (with other built-in terms). |
+| `--include-read` | Omits `is:unread` so read mail in INBOX is included. |
+| `--query "..."` | Appends a raw Gmail query fragment (processing still targets INBOX). If the query has no date-style bound and no `is:unread`, you are prompted to confirm. |
+
+Examples:
 
 ```bash
-python -m mailpilot.main run-once
+mailpilot run-once
+mailpilot run-once --dry-run
+mailpilot run-once --newer-than-days 30
+mailpilot run-once --newer-than-days 30 --include-read
+mailpilot run-once --query "from:boss@example.com newer_than:7d"
 ```
 
-To do a dry run that **does not modify Gmail labels or archive messages**, add `--dry-run`:
+**Inbox defaults:** Unread-only in INBOX unless you change behavior with the flags above. **`--include-read` without `--newer-than-days`** prompts for confirmation (full INBOX scan risk).
+
+#### `run`
+
+Same processing as `run-once`, repeated forever (until SIGINT/SIGTERM), with a sleep between passes.
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--interval` | `-i` | Seconds between runs (default from `MAILPILOT_POLL_INTERVAL_SECONDS`). |
+| `--dry-run` | | Same as `run-once`. |
+| `--newer-than-days` | | Same as `run-once`. |
+| `--include-read` | | Same as `run-once`. |
+| `--query` | | Same as `run-once`. |
 
 ```bash
-python -m mailpilot.main run-once --dry-run
+mailpilot run
+mailpilot run --interval 120
+mailpilot run --dry-run
 ```
 
-- **Run continuously with internal scheduler**:
+#### `db-check`
+
+Read-only check: integrity, foreign keys, per-account processed counts, duplicate/orphan signals. Exits with code **1** if the report is not OK.
 
 ```bash
-python -m mailpilot.main run
+mailpilot db-check
 ```
 
-With dry-run enabled:
+Does not require `OPENAI_API_KEY`.
+
+#### `summarize`
+
+Prints the most recent rows from processed email history (all categories), newest first.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--limit` | `20` | Maximum rows to print. |
 
 ```bash
-python -m mailpilot.main run --dry-run
+mailpilot summarize --limit 20
 ```
 
-Optionally override the polling interval:
+#### Optional behavior via `.env`
 
-```bash
-python -m mailpilot.main run --interval 120
-```
-
-- **Control how deep MailPilot scans your inbox**:
-
-By default, MailPilot considers unread messages in your `INBOX`. You can fine-tune this:
-
-- Limit to recent mail only (e.g., last 30 days):
-
-```bash
-python -m mailpilot.main run-once --newer-than-days 30
-```
-
-- Include read messages as well as unread ones (still respecting idempotency and per-run limits):
-
-```bash
-python -m mailpilot.main run-once --newer-than-days 30 --include-read
-```
-
-If you ask MailPilot to include read messages **without** a `--newer-than-days` bound, it will warn you and ask for confirmation before scanning your entire `INBOX`.
-
-- Advanced: use a raw Gmail search query (still constrained to `INBOX`) for power users:
-
-```bash
-python -m mailpilot.main run-once --query "from:boss@example.com newer_than:7d"
-```
-
-If your raw query does **not** include a date bound (e.g. `newer_than:` or `after:`) or `is:unread`, MailPilot will warn you that it may scan your entire `INBOX` and ask for confirmation before proceeding.
-
-- **Reducing inbox noise (optional)**  
-  By default, MailPilot keeps routine security notices and receipts in the inbox (only newsletters and promotions are archived) so that important messages are not hidden. Once you are comfortable with classifications, you can enable:
-
-  - **`MAILPILOT_ARCHIVE_SECURITY_NOISE=1`** – Archive routine security noise (e.g. “2FA backup codes generated”, “You allowed X app”). Truly critical security alerts (e.g. new sign-in from unknown device) remain classified as important and stay in the inbox. Archived security messages are labeled `security` so you can find them.
-  - **`MAILPILOT_ARCHIVE_RECEIPTS=1`** – Archive receipts and transactional confirmations (same per-run limits as newsletters). Add these to `.env` when you want to ease into a quieter inbox.
-
-- **Check the SQLite database** (integrity, foreign keys, per-account processed counts). Does **not** require `OPENAI_API_KEY`; uses `MAILPILOT_DB_PATH` or the default `data/mailpilot.db`:
-
-```bash
-python -m mailpilot.main db-check
-```
-
-- **Summarize recent categorized emails**:
-
-```bash
-python -m mailpilot.main summarize --limit 20
-```
+Archive and noise tuning (`MAILPILOT_ARCHIVE_SECURITY_NOISE`, `MAILPILOT_ARCHIVE_RECEIPTS`) and safe-sender / per-run caps are described in the [configuration table](#configuration-environment-variables).
 
 ### Example Cron Integration
 
-Instead of using the internal scheduler, you can schedule periodic runs via cron or systemd timers by invoking `run-once`:
+Schedule `run-once` with cron or a systemd timer:
 
 ```cron
 */5 * * * * /path/to/venv/bin/python -m mailpilot.main run-once >> /var/log/mailpilot-cron.log 2>&1
 ```
 
+If `mailpilot` is on the cron user’s PATH:
+
+```cron
+*/5 * * * * /path/to/venv/bin/mailpilot run-once >> /var/log/mailpilot-cron.log 2>&1
+```
+
 ### Troubleshooting
 
 - **Missing OpenAI API key**  
-  If you run a command like `python -m mailpilot.main run-once` and MailPilot cannot find `OPENAI_API_KEY`, it will show a styled error screen explaining how to create an API key and add it to your `.env` file.
+  Commands that load full config (`run`, `run-once`, `summarize`, …) require `OPENAI_API_KEY`. MailPilot shows a styled error panel with steps to add the key to `.env`.
 
-- **Missing or invalid Gmail OAuth credentials**  
-  If you run `python -m mailpilot.main add-account` and `GOOGLE_CREDENTIALS_FILE` is not set or points to a non-existent file, MailPilot will display a friendly error screen showing the detected value and step-by-step instructions to create the credentials JSON and update your `.env`.
+- **Missing or invalid Gmail OAuth client file**  
+  `add-account` needs `GOOGLE_CREDENTIALS_FILE` pointing at the **client** JSON. A friendly error panel explains how to create it in Google Cloud Console.
 
-- **Privacy and logs**
-  MailPilot avoids logging raw classifier payloads from OpenAI parse failures, but operational logs can still include email addresses and high-level processing metadata. Treat log files under `data/logs/` as sensitive local data.
+- **Gmail sign-in expired or revoked (multi-account)**  
+  If one account’s token is bad (common weekly in OAuth **Testing** mode), that account is **skipped** for the run; others continue. Read the **yellow** lines after the run summary, then run `mailpilot add-account` and sign in for each listed address.
+
+- **Privacy and logs**  
+  Classifier parse failures are not logged with raw model text, but logs can still include addresses and processing metadata. Treat `data/logs/` as sensitive.
 
 ### Roadmap
 

@@ -220,10 +220,10 @@ def db_check_command() -> None:
 
 @app.command("summarize")
 def summarize_command(
-    limit: int = typer.Option(20, help="Number of recent important emails to show."),
+    limit: int = typer.Option(20, help="Number of recent processed rows to show."),
 ) -> None:
     """
-    Show a summary of recent categorized emails.
+    Show a summary of recent categorized emails (all categories).
     """
     from .database import ProcessedEmailRepository, connection_ctx
 
