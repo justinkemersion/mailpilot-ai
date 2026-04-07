@@ -58,3 +58,5 @@ data/tokens/
 .env
 .env.*
 !.env.example
+# direnv (often holds machine-local secrets, e.g. Supabase PAT path)
+.envrc
