@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 
 import typer
 from rich.console import Console
@@ -248,8 +249,17 @@ def _truncate(s: str | None, max_len: int = 48) -> str:
 
 
 def _history_console() -> Console:
-    # Rich 14 only fixes dimensions when *both* width and height are set; otherwise it probes the TTY (often 80 cols).
-    return Console(width=240, height=40, soft_wrap=True)
+    """
+    Match the real terminal width so Rich does not lay out the history table
+    wider than the display (which would wrap box-drawing and look broken).
+    """
+    try:
+        width = shutil.get_terminal_size().columns
+    except OSError:
+        width = 80
+    width = max(40, width)
+    # Height set so Rich has stable dimensions when not attached to a TTY.
+    return Console(width=width, height=40, soft_wrap=False)
 
 
 @app.command("history")

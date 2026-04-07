@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 
 import pytest
+from rich.console import Console
 from typer.testing import CliRunner
 
 
@@ -44,6 +45,11 @@ def test_history_command_prints_table(_openai_key, monkeypatch):
 
     monkeypatch.setattr("mailpilot.database.connection_ctx", _fake_connection_ctx)
     monkeypatch.setattr("mailpilot.database.ProcessedEmailRepository", FakeProcessedRepo)
+    # CliRunner's pseudo-TTY is narrow; widen so table cells are not ellipsized in assertions.
+    monkeypatch.setattr(
+        "mailpilot.cli._history_console",
+        lambda: Console(width=200, height=40, soft_wrap=False),
+    )
 
     from mailpilot.cli import app
 
