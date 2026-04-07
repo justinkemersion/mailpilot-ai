@@ -271,7 +271,7 @@ class GmailClient:
             .execute(),
         )
 
-        headers = {h["name"].lower(): h["value"] for h in msg["payload"].get("headers", [])}
+        headers = _headers_from_payload(msg.get("payload") or {})
         subject = headers.get("subject")
         sender = headers.get("from")
         snippet = msg.get("snippet")
@@ -489,6 +489,35 @@ class SafeGmailClient:
         raise ForbiddenGmailActionError(
             "MailPilot safety guardrail: batch deletion of Gmail messages is not allowed."
         )
+
+
+def _headers_from_payload(payload: dict) -> dict[str, str]:
+    """
+    Collect RFC822-style headers from a Gmail message payload tree.
+
+    Root ``payload`` is often ``multipart/*`` with no headers; ``From`` / ``Subject``
+    may live on nested parts. First seen wins per header name (parent before children).
+    """
+    out: dict[str, str] = {}
+
+    def walk(node: dict) -> None:
+        for h in node.get("headers") or []:
+            if not isinstance(h, dict):
+                continue
+            raw_name = h.get("name")
+            if not raw_name:
+                continue
+            name = str(raw_name).strip().lower()
+            if not name or name in out:
+                continue
+            val = h.get("value")
+            out[name] = (str(val).strip() if val is not None else "")
+        for child in node.get("parts") or []:
+            if isinstance(child, dict):
+                walk(child)
+
+    walk(payload)
+    return out
 
 
 def _extract_body(payload: dict) -> str | None:

@@ -26,6 +26,20 @@ from .models import Account
 logger = logging.getLogger(__name__)
 
 
+def _sender_for_storage(sender: str | None) -> str:
+    """Persist a non-empty sender for history/undo UX; Gmail may omit From on some payloads."""
+    s = (sender or "").strip()
+    return s if s else "Unknown sender"
+
+
+def _actions_taken_for_storage(category: str, summary: AppliedActionSummary) -> str:
+    """Avoid blank history when MailPilot applied no labels/archive but still recorded the row."""
+    t = (summary.actions_taken or "").strip()
+    if t:
+        return t
+    return f"Processed as {category}; no MailPilot Gmail changes applied"
+
+
 @dataclass
 class AppliedActionSummary:
     """What MailPilot changed in Gmail for one message (for history / undo)."""
@@ -278,7 +292,7 @@ class EmailProcessor:
                     subject=msg.subject,
                     gmail_thread_id=msg.thread_id,
                     raw_labels=",".join(msg.labels) if msg.labels else None,
-                    sender=msg.sender,
+                    sender=_sender_for_storage(msg.sender),
                 )
             except sqlite3.Error as exc:
                 logger.error(
@@ -305,7 +319,7 @@ class EmailProcessor:
             applied_json = json.dumps(summary.label_names) if summary.label_names else None
             processed_repo.update_action_metadata(
                 pe.id,
-                summary.actions_taken,
+                _actions_taken_for_storage(classification.category, summary),
                 summary.was_archived,
                 applied_json,
             )

@@ -125,6 +125,26 @@ def test_gmail_client_get_message_raises_gmail_api_error(monkeypatch):
         client.get_message(_dummy_account(), "msg-1")
 
 
+def test_headers_from_payload_finds_from_on_nested_parts():
+    from mailpilot.gmail_client import _headers_from_payload
+
+    payload = {
+        "mimeType": "multipart/alternative",
+        "parts": [
+            {
+                "mimeType": "text/plain",
+                "headers": [
+                    {"name": "From", "value": "Bob <bob@example.com>"},
+                    {"name": "Subject", "value": "Hello"},
+                ],
+            }
+        ],
+    }
+    headers = _headers_from_payload(payload)
+    assert headers["from"] == "Bob <bob@example.com>"
+    assert headers["subject"] == "Hello"
+
+
 def test_scheduler_run_once_uses_email_processor(monkeypatch):
     """
     Ensure run_once delegates to EmailProcessor without raising.
