@@ -9,14 +9,11 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 
-@contextmanager
-def _fake_connection_ctx():
-    yield None
-
-
 @pytest.fixture
 def _openai_key(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key-for-cli")
+    monkeypatch.setenv("SUPABASE_URL", "http://127.0.0.1:54321")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-svc")
 
 
 def test_history_command_prints_table(_openai_key, monkeypatch):
@@ -37,15 +34,14 @@ def test_history_command_prints_table(_openai_key, monkeypatch):
     ]
 
     class FakeProcessedRepo:
-        def __init__(self, _conn) -> None:
-            pass
-
         def search_history(self, **kwargs):
             return list(rows)
 
-    monkeypatch.setattr("mailpilot.database.connection_ctx", _fake_connection_ctx)
-    monkeypatch.setattr("mailpilot.database.ProcessedEmailRepository", FakeProcessedRepo)
-    # CliRunner's pseudo-TTY is narrow; widen so table cells are not ellipsized in assertions.
+    @contextmanager
+    def _ctx():
+        yield type("A", (), {})(), FakeProcessedRepo()
+
+    monkeypatch.setattr("mailpilot.persistence.repository_context", _ctx)
     monkeypatch.setattr(
         "mailpilot.cli._history_console",
         lambda: Console(width=200, height=40, soft_wrap=False),
@@ -81,8 +77,8 @@ def test_history_undo_calls_gmail_and_marks_undone(_openai_key, monkeypatch):
     ]
 
     class FakeProcessedRepo:
-        def __init__(self, _conn) -> None:
-            pass
+        def __init__(self) -> None:
+            self.last_undone: int | None = None
 
         def search_history(self, **kwargs):
             return list(rows)
@@ -90,19 +86,15 @@ def test_history_undo_calls_gmail_and_marks_undone(_openai_key, monkeypatch):
         def mark_undone(self, pid: int) -> None:
             self.last_undone = pid
 
-    fake_proc_ctor_calls: list[FakeProcessedRepo] = []
-
-    def proc_factory(conn):
-        r = FakeProcessedRepo(conn)
-        fake_proc_ctor_calls.append(r)
-        return r
-
     class FakeAccountRepo:
-        def __init__(self, _conn) -> None:
-            pass
-
         def update_token(self, *_a, **_k) -> None:
             pass
+
+    proc = FakeProcessedRepo()
+
+    @contextmanager
+    def _ctx():
+        yield FakeAccountRepo(), proc
 
     class FakeSafeClient:
         def __init__(self, *_a, **_k) -> None:
@@ -116,9 +108,7 @@ def test_history_undo_calls_gmail_and_marks_undone(_openai_key, monkeypatch):
 
     fake_client = FakeSafeClient()
 
-    monkeypatch.setattr("mailpilot.database.connection_ctx", _fake_connection_ctx)
-    monkeypatch.setattr("mailpilot.database.ProcessedEmailRepository", proc_factory)
-    monkeypatch.setattr("mailpilot.database.AccountRepository", FakeAccountRepo)
+    monkeypatch.setattr("mailpilot.persistence.repository_context", _ctx)
     monkeypatch.setattr("mailpilot.gmail_client.SafeGmailClient", lambda *a, **k: fake_client)
 
     from mailpilot.cli import app
@@ -129,5 +119,4 @@ def test_history_undo_calls_gmail_and_marks_undone(_openai_key, monkeypatch):
     assert fake_client.undo_calls == [
         ("me@example.com", "mid-99", ["work"], True),
     ]
-    # Second ProcessedEmailRepository instance handles mark_undone
-    assert any(getattr(r, "last_undone", None) == 42 for r in fake_proc_ctor_calls)
+    assert proc.last_undone == 42

@@ -28,22 +28,22 @@ We use a monorepo to separate concerns. **CRITICAL RULE FOR AI:** Never mix the 
 
 ## 3. Migration Roadmap
 
-### Phase 1: Database Migration (In Progress)
+### Phase 1: Database Migration (Done)
 - Migrate from local SQLite to Supabase PostgreSQL.
 - Recreate `ProcessedEmail` and `Account` tables.
 - Add `user_id` (UUID) to support multi-tenancy.
 - Implement Row Level Security (RLS) so users only see their own data.
 
-### Phase 2: Web Auth & OAuth Setup
+### Phase 2: Web Auth & OAuth Setup (Done)
 - Implement Supabase Auth in Next.js.
 - Create a Next.js API route to handle Google OAuth callback.
 - securely store the Google `refresh_token` in the Supabase `accounts` table.
 
-### Phase 3: Python Worker Refactor
-- Strip the Typer CLI and SQLite dependencies from `mailpilot-runner`.
-- Replace the SQLite repository classes with Supabase Python Client calls.
-- Update the worker loop to iterate over all users in the Supabase database.
+### Phase 3: Python Worker Refactor (Done)
+- Replace SQLite with Supabase-backed persistence (`mailpilot.persistence`).
+- Update the worker to iterate active accounts from Supabase (tokens from the web OAuth flow).
+- Typer CLI remains for `run`, `run-once`, `watch-jobs`, `history`, etc.
 
-### Phase 4: The Dashboard UI
-- Build the Next.js frontend to replace the CLI `history` command.
-- Implement an API route to trigger the Python "Undo" function (via queue or direct webhook).
+### Phase 4: The Dashboard UI (Done)
+- Dashboard history table, **Process inbox** via `run_jobs` + `watch-jobs`, and undo via a Next.js API route (Gmail modify + Supabase update).
+- See [root `README.md`](../README.md#standalone-runner--web-app-why-this-pattern) for the runner/web split and tradeoffs.

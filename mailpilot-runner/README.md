@@ -2,6 +2,8 @@
 
 MailPilot is a Python-based, AI-powered Gmail inbox manager. It connects to one or more Gmail accounts, periodically fetches new emails, classifies them using an LLM, and automatically applies labels and actions (archiving, flagging important messages) to keep your inbox organized.
 
+> **Multi-tenant stack:** Accounts and processed-email history live in **Supabase** (PostgreSQL), populated by the **[`mailpilot-web`](../mailpilot-web/)** app (Gmail OAuth). This package is the **worker**: it reads tokens from Supabase, calls Gmail + OpenAI, and writes results back. For **why** the repo splits a Next.js app and a Python runner—and the pros and cons—read the [root `README.md`](../README.md#standalone-runner--web-app-why-this-pattern). To process runs triggered from the dashboard, use **`python -m mailpilot.main watch-jobs`** (see [CLI reference](#cli-reference)).
+
 ## What MailPilot Does
 
 MailPilot acts as an AI autopilot for your Gmail inbox.
@@ -35,8 +37,8 @@ to ensure idempotent behavior.
   - Apply Gmail labels per category.
   - Archive newsletters and promotions.
   - Flag important emails with an `IMPORTANT` / `mailpilot/important` label.
-- **Idempotent processing** using SQLite to track processed messages and avoid duplicates.
-- **Typer-based CLI** for running the processor, adding accounts, database checks, summaries, and **history with undo** (restore INBOX / labels using each message’s Gmail id).
+- **Idempotent processing** using **Supabase** (`processed_emails`) to track processed messages and avoid duplicates.
+- **Typer-based CLI** for running the processor, **Supabase checks**, summaries, **history with undo**, and **`watch-jobs`** (consumes `run_jobs` from the web app).
 - **Safe senders** via environment variables so trusted addresses are not marked spam and are treated gently for archives.
 - **Per-run caps** on archives, spam marks, and label changes to limit blast radius.
 - **Graceful Gmail re-auth**: expired or revoked OAuth for one account skips that account only; others keep running, with a clear CLI summary.
@@ -50,38 +52,33 @@ Core components live under the `mailpilot` package:
 - `ai_classifier` – OpenAI-based classifier with a clear interface (`Classifier`).
 - `email_processor` – orchestrates fetch → classify → label per account.
 - `scheduler` – runs processing once or in a loop.
-- `database` – SQLite schema and repositories (`AccountRepository`, `ProcessedEmailRepository`).
+- `persistence` – Supabase-backed repositories (`SupabaseAccountRepository`, `SupabaseProcessedEmailRepository`, `RunJobRepository`).
 - `models` – simple data models.
 - `cli` / `main` – Typer CLI entrypoints.
 
-Data and logs are stored under `data/`:
-
-- `data/mailpilot.db` – SQLite database (configurable).
-- `data/logs/` – log files.
-- `data/tokens/` – reserved for future token storage strategies (currently tokens are stored in SQLite).
+Gmail OAuth tokens and processed-email rows are stored in **Supabase** (see `mailpilot-web/supabase/schema.sql`). Local **logs** still go under `data/logs/` when the file handler is enabled.
 
 ### Architecture Diagram
 
 ```mermaid
 flowchart LR
-  user[User] --> cli[CLI_Typer]
+  web[mailpilot_web] --> supa[(Supabase_PG)]
+  user[Operator_CLI] --> cli[Typer_CLI]
   cli --> appService[EmailProcessor]
 
   appService --> gmailClient[GmailClient]
   appService --> classifier[AIClassifier]
-  appService --> dbLayer[SQLiteRepositories]
+  appService --> dbLayer[SupabaseRepos]
 
   gmailClient --> gmailAPI[Gmail_API]
   classifier --> openaiAPI[OpenAI_API]
-  dbLayer --> sqliteDB[SQLite_DB]
+  dbLayer --> supa
 
-  subgraph dataDirs[Data]
-    tokensDir[tokens/]
+  subgraph dataDirs[Local]
     logsDir[logs/]
   end
 
   appService --> logsDir
-  dbLayer --> tokensDir
 ```
 
 ### Installation
@@ -119,7 +116,7 @@ This registers the **`mailpilot`** command on your PATH (same program as `python
 cp .env.example .env
 ```
 
-Fill in `OPENAI_API_KEY` and `GOOGLE_CREDENTIALS_FILE` at minimum. All variables are documented in [Configuration (environment variables)](#configuration-environment-variables) and in [`.env.example`](.env.example).
+Fill in `OPENAI_API_KEY`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` at minimum. Linking Gmail accounts is done in the **MailPilot web app**, not via CLI. Variables are summarized below and in [`.env.example`](.env.example).
 
 ### Invoking the CLI
 
@@ -140,9 +137,9 @@ Every subcommand below works with both prefixes.
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `OPENAI_API_KEY` | Yes for `run`, `run-once`, and commands that load full app config | — | OpenAI API key for classification. |
-| `GOOGLE_CREDENTIALS_FILE` | Yes for `add-account` | — | Path to Google OAuth **client** JSON (Desktop app type). |
-| `MAILPILOT_DB_PATH` | No | `data/mailpilot.db` | SQLite database path. |
+| `OPENAI_API_KEY` | Yes for `run`, `run-once`, `watch-jobs`, and most commands | — | OpenAI API key for classification. |
+| `SUPABASE_URL` | Yes | — | Supabase project URL (same as web app’s project). |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | — | Service role key (**trusted machines only**; bypasses RLS). |
 | `MAILPILOT_POLL_INTERVAL_SECONDS` | No | `300` | Default seconds between loops for `run` (overridden by `--interval`). |
 | `MAILPILOT_LOG_LEVEL` | No | `INFO` | Logging level (`DEBUG`, `INFO`, …). |
 | `MAILPILOT_OPENAI_MODEL` | No | `gpt-4.1-mini` | Model name for the classifier. |
@@ -154,7 +151,7 @@ Every subcommand below works with both prefixes.
 | `MAILPILOT_MAX_SPAM_MARKS_PER_RUN` | No | `10` | Maximum spam label applications per run. |
 | `MAILPILOT_MAX_LABEL_ACTIONS_PER_RUN` | No | `200` | Maximum Gmail label modifications per run. |
 
-`db-check` does **not** require `OPENAI_API_KEY`; it only resolves `MAILPILOT_DB_PATH` (or the default DB path).
+`supabase-check` does **not** require `OPENAI_API_KEY`; it only checks Supabase connectivity and table reachability.
 
 ### Development
 
@@ -181,18 +178,9 @@ pip install -r requirements.txt
 
 ### Gmail API Setup
 
-1. Go to the Google Cloud Console and create a project.
-2. Enable the **Gmail API** for your project.
-3. Configure an OAuth consent screen (External or Internal as appropriate).
-4. Create OAuth 2.0 credentials of type **Desktop application**.
-5. Under your OAuth client, ensure the **scope** used is (this is the only scope MailPilot needs):
-   - `https://www.googleapis.com/auth/gmail.modify`
-6. Download the client credentials JSON file and store it securely on your machine.
-7. Set `GOOGLE_CREDENTIALS_FILE` in `.env` to the full path of that JSON file.
+OAuth **client IDs** (Web application type), redirect URIs, and the `gmail.modify` scope are configured for the **Next.js app**—see [`mailpilot-web/README.md`](../mailpilot-web/README.md). The runner only consumes **refresh tokens** already stored in Supabase.
 
-MailPilot uses the installed-app flow; when you run `add-account`, your browser opens for consent. Access and refresh tokens are stored in SQLite and are **refreshed automatically** while Google still accepts the refresh token.
-
-**Testing mode and weekly re-consent:** On the **Testing** user type, Google typically expires refresh tokens after **about seven days**. When refresh fails, MailPilot **skips only the affected account(s)**, logs a clear error, and **continues with accounts that still authenticate**. After `run` or `run-once`, a **yellow** summary lists addresses that need sign-in again; run `add-account` once per address (re-adding updates the stored token for that email).
+**Testing mode and weekly re-consent:** In Google **Testing** mode, refresh tokens often expire after **about seven days**. When refresh fails, MailPilot **skips that account**, logs clearly, and continues with others. Reconnect the address in the web app (**Connect Gmail**).
 
 ### OpenAI Setup
 
@@ -203,17 +191,16 @@ MailPilot uses the installed-app flow; when you run `add-account`, your browser 
 
 ### CLI reference
 
-Commands apply to **all active accounts** in the database unless Gmail authentication fails for some (those are skipped; see Gmail setup).
+Commands apply to **all active accounts** in Supabase unless Gmail authentication fails for some (those are skipped; see Gmail setup). **Linking Gmail** is done in the MailPilot **web app** (`mailpilot-web`), not via CLI.
 
-#### `add-account`
+#### `watch-jobs`
 
-Runs the desktop OAuth flow and saves tokens to SQLite for the Google account you sign into.
+Polls Supabase for **`run_jobs`** rows created by the dashboard’s **Process inbox** button, claims each job, runs the same processing pipeline as `run-once`, and writes status/results back. Keep this running locally or on a server while using the web UI to trigger runs.
 
 ```bash
-mailpilot add-account
+python -m mailpilot.main watch-jobs
+python -m mailpilot.main watch-jobs --poll-interval 10
 ```
-
-Requires `GOOGLE_CREDENTIALS_FILE` and a valid client secrets JSON.
 
 #### `run-once`
 
@@ -256,15 +243,13 @@ mailpilot run --interval 120
 mailpilot run --dry-run
 ```
 
-#### `db-check`
+#### `supabase-check`
 
-Read-only check: integrity, foreign keys, per-account processed counts, duplicate/orphan signals. Exits with code **1** if the report is not OK.
+Verifies `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` and that core tables are reachable. Does not require `OPENAI_API_KEY`.
 
 ```bash
-mailpilot db-check
+python -m mailpilot.main supabase-check
 ```
-
-Does not require `OPENAI_API_KEY`.
 
 #### `summarize`
 
@@ -280,7 +265,7 @@ mailpilot summarize --limit 20
 
 #### `history`
 
-Search the **local SQLite** log of what MailPilot has already processed (per Gmail account). The table includes a **Gmail message ID** column so you can copy an id and target a single message for `--undo` without querying the database by hand.
+Search the **Supabase** log of what MailPilot has already processed (per Gmail account). The table includes a **Gmail message ID** column so you can copy an id and target a single message for `--undo` without querying the database by hand.
 
 Undo uses the Gmail API to put the message back in the inbox (adds `INBOX` and `UNREAD`) and removes MailPilot-applied labels recorded for that row. Rows processed before undo metadata existed may only get inbox/unread restoration.
 
@@ -342,19 +327,19 @@ If `mailpilot` is on the cron user’s PATH:
 - **Missing OpenAI API key**  
   Commands that load full config (`run`, `run-once`, `summarize`, `history`, …) require `OPENAI_API_KEY`. MailPilot shows a styled error panel with steps to add the key to `.env`.
 
-- **Missing or invalid Gmail OAuth client file**  
-  `add-account` needs `GOOGLE_CREDENTIALS_FILE` pointing at the **client** JSON. A friendly error panel explains how to create it in Google Cloud Console.
+- **Gmail not linked**  
+  If there are no rows in `accounts`, connect Gmail from the MailPilot web app first.
 
 - **Gmail sign-in expired or revoked (multi-account)**  
-  If one account’s token is bad (common weekly in OAuth **Testing** mode), that account is **skipped** for the run; others continue. Read the **yellow** lines after the run summary, then run `mailpilot add-account` and sign in for each listed address.
+  If one account’s token is bad (common weekly in OAuth **Testing** mode), that account is **skipped** for the run; others continue. Read the **yellow** lines after the run summary, then use **Connect Gmail** in the web app for each listed address.
 
 - **Privacy and logs**  
   Classifier parse failures are not logged with raw model text, but logs can still include addresses and processing metadata. Treat `data/logs/` as sensitive.
 
 ### Roadmap
 
-- **Web dashboard** for viewing and adjusting classifications.
 - **Rules engine** to combine AI classification with user-defined rules.
 - **Additional providers** (Outlook, generic IMAP).
 - **Improved observability** (metrics, tracing, richer logging).
 - **Configurable models and prompts** per user or account.
+- **Stronger job-queue semantics** (e.g. multi-worker claiming) as usage grows.

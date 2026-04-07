@@ -10,7 +10,7 @@ from rich.table import Table
 
 from .config import load_config
 from .email_processor import RunResult
-from .scheduler import run_forever, run_once
+from .scheduler import run_forever, run_once, watch_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,9 @@ def _echo_run_summary(result: RunResult | None) -> None:
     if result is None:
         return
     if result.accounts_processed == 0:
-        typer.echo("No accounts configured. Run 'add-account' to add a Gmail account.")
+        typer.echo(
+            "No active Gmail accounts in Supabase. Connect Gmail in the MailPilot web app first."
+        )
         return
     prefix = "Would have: " if result.dry_run else ""
     typer.echo(
@@ -37,7 +39,7 @@ def _echo_run_summary(result: RunResult | None) -> None:
             fg=typer.colors.YELLOW,
         )
         typer.secho(
-            "Run: python -m mailpilot.main add-account — sign in again for each address above. "
+            "Reconnect each address via the MailPilot web app (Connect Gmail). "
             "Google OAuth apps in 'Testing' mode usually need re-consent about once a week.",
             fg=typer.colors.YELLOW,
         )
@@ -175,48 +177,47 @@ def run_once_command(
     _echo_run_summary(result)
 
 
-@app.command("add-account")
-def add_account_command() -> None:
+@app.command("watch-jobs")
+def watch_jobs_command(
+    poll_interval: int = typer.Option(
+        5,
+        "--poll-interval",
+        "-p",
+        help="Seconds between polls for pending run_jobs.",
+    ),
+) -> None:
     """
-    Add a new Gmail account via OAuth and store its credentials.
+    Watch for inbox-processing jobs queued from the MailPilot web app.
+
+    Polls Supabase every POLL_INTERVAL seconds for pending run_jobs rows,
+    claims and executes each one, then writes back the result. Run this
+    alongside the web app so the 'Process inbox' button works.
+
+    Example:
+        python -m mailpilot.main watch-jobs
+        python -m mailpilot.main watch-jobs --poll-interval 10
     """
-    from .gmail_client import add_account_via_oauth
+    typer.secho(
+        f"Watching for run_jobs (poll every {poll_interval}s) — press Ctrl+C to stop",
+        fg=typer.colors.CYAN,
+    )
+    watch_jobs(poll_interval=poll_interval)
 
-    logger.info("Adding a new Gmail account")
-    add_account_via_oauth()
 
-
-@app.command("db-check")
-def db_check_command() -> None:
+@app.command("supabase-check")
+def supabase_check_command() -> None:
     """
-    Verify SQLite database integrity, foreign keys, and multi-account isolation.
-    Does not require OPENAI_API_KEY (only reads MAILPILOT_DB_PATH / default data path).
+    Verify SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY and that core tables are reachable.
+    Does not require OPENAI_API_KEY.
     """
-    from .database import check_database_at_path, resolve_database_file_path
+    from .persistence import check_supabase_connection
 
-    path = resolve_database_file_path()
-    report = check_database_at_path(path)
-
-    typer.echo(f"Database: {report.db_path_display}")
-    typer.echo(f"Integrity: {report.integrity}")
-    typer.echo(f"Foreign key violations: {report.foreign_key_violation_count}")
-    typer.echo(f"Active accounts: {report.active_accounts}")
-    typer.echo(f"Processed emails (total): {report.processed_emails_total}")
-    for acc_id, email, n in report.account_summaries:
-        typer.echo(f"  account id={acc_id} {email!r}: {n} processed row(s)")
-    typer.echo(f"Orphan processed rows: {report.orphan_processed_count}")
-    typer.echo(f"Duplicate (account, message) groups: {report.duplicate_key_groups}")
-    if report.cross_account_message_id_count:
-        typer.echo(
-            f"Gmail message ids shared across accounts: {report.cross_account_message_id_count} "
-            "(informational)"
-        )
-    for msg in report.messages:
-        typer.secho(msg, fg=typer.colors.YELLOW if report.ok else typer.colors.RED)
-    if report.ok:
-        typer.secho("db-check: OK", fg=typer.colors.GREEN)
+    ok, message = check_supabase_connection()
+    typer.echo(message)
+    if ok:
+        typer.secho("supabase-check: OK", fg=typer.colors.GREEN)
     else:
-        typer.secho("db-check: FAILED", fg=typer.colors.RED)
+        typer.secho("supabase-check: FAILED", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
 
@@ -227,10 +228,9 @@ def summarize_command(
     """
     Show a summary of recent categorized emails (all categories).
     """
-    from .database import ProcessedEmailRepository, connection_ctx
+    from .persistence import repository_context
 
-    with connection_ctx() as conn:
-        repo = ProcessedEmailRepository(conn)
+    with repository_context() as (_, repo):
         summary = repo.summarize_recent(limit=limit)
 
     typer.echo("Recent categorized emails:")
@@ -279,13 +279,12 @@ def history_command(
     undo: bool = typer.Option(False, "--undo", help="Reverse MailPilot actions for matching row(s)."),
 ) -> None:
     """
-    Search processed-email history in the local database; optionally undo Gmail changes.
+    Search processed-email history in Supabase; optionally undo Gmail changes.
     """
-    from .database import AccountRepository, ProcessedEmailRepository, connection_ctx
+    from .persistence import repository_context
     from .gmail_client import GmailApiError, GmailAuthError, GmailClient, SafeGmailClient
 
-    with connection_ctx() as conn:
-        repo = ProcessedEmailRepository(conn)
+    with repository_context() as (_, repo):
         rows = repo.search_history(
             sender=sender,
             subject=subject,
@@ -339,9 +338,7 @@ def history_command(
         )
 
     client = SafeGmailClient(GmailClient())
-    with connection_ctx() as conn:
-        account_repo = AccountRepository(conn)
-        proc_repo = ProcessedEmailRepository(conn)
+    with repository_context() as (account_repo, proc_repo):
         for row in rows:
             actions_str = row.get("actions_taken") or ""
             if "[UNDONE]" in actions_str:

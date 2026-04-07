@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
-from typing import Optional
 
 from rich.console import Console
 from rich.panel import Panel
@@ -29,8 +27,8 @@ def render_config_error(exc: RuntimeError) -> bool:
         _render_openai_api_key_error()
         return True
 
-    if "GOOGLE_CREDENTIALS_FILE must point to a valid OAuth client secrets JSON" in message:
-        _render_gmail_credentials_error()
+    if "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY" in message:
+        _render_supabase_credentials_error()
         return True
 
     return False
@@ -52,34 +50,13 @@ def _render_openai_api_key_error() -> None:
     _panel("Missing OpenAI API key", body)
 
 
-def _render_gmail_credentials_error() -> None:
-    raw = os.getenv("GOOGLE_CREDENTIALS_FILE")
-    if raw:
-        path = Path(raw).expanduser()
-        exists_msg = "exists" if path.exists() else "does NOT exist"
-        location_line = f"Detected GOOGLE_CREDENTIALS_FILE: {path} ({exists_msg})"
-    else:
-        location_line = "Detected GOOGLE_CREDENTIALS_FILE: <not set>"
-
-    # Also print the location line plainly so tests (and users piping output)
-    # can see the exact path without any styling.
-    print(location_line)
-
+def _render_supabase_credentials_error() -> None:
     body = (
-        "MailPilot could not start the Gmail OAuth flow because it could not find\n"
-        "a valid Google OAuth client credentials JSON file.\n\n"
-        f"{location_line}\n\n"
-        "How to fix this:\n"
-        "  1. Go to the Google Cloud Console and create a project.\n"
-        "  2. Enable the Gmail API and configure the OAuth consent screen.\n"
-        "  3. Create OAuth 2.0 credentials of type Desktop application.\n"
-        "  4. Under scope, use this (the only scope MailPilot needs):\n"
-        "       https://www.googleapis.com/auth/gmail.modify\n"
-        "  5. Download the client credentials JSON file to a secure location.\n"
-        "  6. In your project .env file, set for example:\n"
-        "       GOOGLE_CREDENTIALS_FILE=/full/path/to/google_client_secrets.json\n"
-        "  7. Save the file and re-run:\n"
-        "       python -m mailpilot.main add-account\n"
+        "The worker could not start because Supabase credentials are missing.\n\n"
+        "Set in mailpilot-runner/.env (never commit the service role key):\n"
+        "  SUPABASE_URL=https://<project-ref>.supabase.co\n"
+        "  SUPABASE_SERVICE_ROLE_KEY=<service-role-secret>\n\n"
+        "Use the service role key only on trusted servers (it bypasses RLS).\n"
+        "Gmail accounts are linked via the MailPilot web app, not the CLI.\n"
     )
-    _panel("Missing or invalid Gmail OAuth credentials", body)
-
+    _panel("Missing Supabase configuration", body)

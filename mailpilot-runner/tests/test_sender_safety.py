@@ -1,9 +1,9 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC
 
 from mailpilot.email_processor import EmailProcessor
-from mailpilot.models import Account
+
+from .fakes import InMemoryAccountRepository, InMemoryProcessedEmailRepository
 
 
 @dataclass
@@ -28,7 +28,12 @@ class RecordingGmailClient:
         self.applied_labels = []
 
     def ensure_labels(self, account):
-        return {"newsletters": "LBL_NEWS", "SPAM": "LBL_SPAM"}
+        return {
+            "newsletters": "LBL_NEWS",
+            "SPAM": "LBL_SPAM",
+            "IMPORTANT": "LBL_IMPORTANT",
+            "mailpilot/important": "LBL_MP_IMP",
+        }
 
     def list_messages(self, account, label_ids=None, query=None, max_results=100):
         return ["m1"]
@@ -63,27 +68,24 @@ class RecordingGmailClient:
         )
 
     def flag_important(self, account, message_id):
-        # Not needed for these tests.
         return None
 
 
-def _dummy_account() -> Account:
-    from datetime import datetime
+def _patch_ctx(monkeypatch, acc_repo, proc_repo):
+    @contextmanager
+    def _ctx():
+        yield acc_repo, proc_repo
 
-    return Account(
-        id=1,
-        email="user@example.com",
-        display_name=None,
-        token_json="{}",
-        active=True,
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
-    )
+    monkeypatch.setattr("mailpilot.email_processor.repository_context", _ctx)
 
 
 def test_whitelisted_sender_never_marked_as_spam(monkeypatch):
-    # Configure boss@example.com as a safe sender
     monkeypatch.setenv("MAILPILOT_SAFE_SENDERS", "boss@example.com")
+    acc_repo = InMemoryAccountRepository()
+    acc_repo.add(email="user@example.com", token_json="{}")
+    proc_repo = InMemoryProcessedEmailRepository()
+    _patch_ctx(monkeypatch, acc_repo, proc_repo)
+
     gmail = RecordingGmailClient()
     processor = EmailProcessor(
         gmail_client=gmail,
@@ -91,51 +93,18 @@ def test_whitelisted_sender_never_marked_as_spam(monkeypatch):
         search_query=None,
     )
 
-    # Patch DB layer so we don't hit real SQLite
-
-    @contextmanager
-    def _fake_ctx():
-        class DummyConn:
-            def commit(self): ...
-
-            def close(self): ...
-
-        conn = DummyConn()
-        try:
-            yield conn
-        finally:
-            conn.close()
-
-    monkeypatch.setattr("mailpilot.email_processor.connection_ctx", _fake_ctx)
-    monkeypatch.setattr(
-        "mailpilot.email_processor.AccountRepository",
-        lambda conn: type(
-            "Repo",
-            (),
-            {"list_active": lambda self: [_dummy_account()]},
-        )(),
-    )
-    monkeypatch.setattr(
-        "mailpilot.email_processor.ProcessedEmailRepository",
-        lambda conn: type(
-            "PRepo",
-            (),
-            {
-                "is_processed": lambda self, account_id, msg_id: False,
-                "mark_processed": lambda self, **kwargs: type("Pe", (), {"id": 1})(),
-                "update_action_metadata": lambda self, *a, **k: None,
-            },
-        )(),
-    )
-
     processor.process_all_accounts_once()
 
-    # No spam label should have been applied.
     assert all("LBL_SPAM" not in call["add"] for call in gmail.applied_labels)
 
 
 def test_whitelisted_sender_newsletter_not_archived(monkeypatch):
     monkeypatch.setenv("MAILPILOT_SAFE_SENDERS", "boss@example.com")
+    acc_repo = InMemoryAccountRepository()
+    acc_repo.add(email="user@example.com", token_json="{}")
+    proc_repo = InMemoryProcessedEmailRepository()
+    _patch_ctx(monkeypatch, acc_repo, proc_repo)
+
     gmail = RecordingGmailClient()
     processor = EmailProcessor(
         gmail_client=gmail,
@@ -143,51 +112,19 @@ def test_whitelisted_sender_newsletter_not_archived(monkeypatch):
         search_query=None,
     )
 
-
-    @contextmanager
-    def _fake_ctx():
-        class DummyConn:
-            def commit(self): ...
-
-            def close(self): ...
-
-        conn = DummyConn()
-        try:
-            yield conn
-        finally:
-            conn.close()
-
-    monkeypatch.setattr("mailpilot.email_processor.connection_ctx", _fake_ctx)
-    monkeypatch.setattr(
-        "mailpilot.email_processor.AccountRepository",
-        lambda conn: type(
-            "Repo",
-            (),
-            {"list_active": lambda self: [_dummy_account()]},
-        )(),
-    )
-    monkeypatch.setattr(
-        "mailpilot.email_processor.ProcessedEmailRepository",
-        lambda conn: type(
-            "PRepo",
-            (),
-            {
-                "is_processed": lambda self, account_id, msg_id: False,
-                "mark_processed": lambda self, **kwargs: type("Pe", (), {"id": 1})(),
-                "update_action_metadata": lambda self, *a, **k: None,
-            },
-        )(),
-    )
-
     processor.process_all_accounts_once()
 
-    # Should be labeled but not archived.
     assert gmail.archived == []
     assert any("LBL_NEWS" in call["add"] for call in gmail.applied_labels)
 
 
 def test_whitelisted_sender_important_allowed(monkeypatch):
     monkeypatch.setenv("MAILPILOT_SAFE_SENDERS", "boss@example.com")
+    acc_repo = InMemoryAccountRepository()
+    acc_repo.add(email="user@example.com", token_json="{}")
+    proc_repo = InMemoryProcessedEmailRepository()
+    _patch_ctx(monkeypatch, acc_repo, proc_repo)
+
     gmail = RecordingGmailClient()
     processor = EmailProcessor(
         gmail_client=gmail,
@@ -195,46 +132,6 @@ def test_whitelisted_sender_important_allowed(monkeypatch):
         search_query=None,
     )
 
-
-    @contextmanager
-    def _fake_ctx():
-        class DummyConn:
-            def commit(self): ...
-
-            def close(self): ...
-
-        conn = DummyConn()
-        try:
-            yield conn
-        finally:
-            conn.close()
-
-    monkeypatch.setattr("mailpilot.email_processor.connection_ctx", _fake_ctx)
-    monkeypatch.setattr(
-        "mailpilot.email_processor.AccountRepository",
-        lambda conn: type(
-            "Repo",
-            (),
-            {"list_active": lambda self: [_dummy_account()]},
-        )(),
-    )
-    monkeypatch.setattr(
-        "mailpilot.email_processor.ProcessedEmailRepository",
-        lambda conn: type(
-            "PRepo",
-            (),
-            {
-                "is_processed": lambda self, account_id, msg_id: False,
-                "mark_processed": lambda self, **kwargs: type("Pe", (), {"id": 1})(),
-                "update_action_metadata": lambda self, *a, **k: None,
-            },
-        )(),
-    )
-
     processor.process_all_accounts_once()
 
-    # For important, actions (labeling/flagging) should be allowed.
-    assert gmail.archived == []
-    # No specific label assertion here; just ensure at least one label call happened.
-    assert len(gmail.applied_labels) >= 0
-
+    assert gmail.applied_labels

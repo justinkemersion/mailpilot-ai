@@ -54,6 +54,8 @@ CREATE TABLE public.processed_emails (
     category             TEXT         NOT NULL,
     subject              TEXT,
     processed_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    -- Gmail internalDate (ms since epoch) converted to UTC; used for history sort/display.
+    message_received_at  TIMESTAMPTZ,
     raw_labels           TEXT,
     sender               TEXT,
     actions_taken        TEXT,
@@ -80,3 +82,40 @@ CREATE POLICY "emails: update own"
 CREATE POLICY "emails: delete own"
     ON public.processed_emails FOR DELETE
     USING (auth.uid() = user_id);
+
+-- ============================================================
+-- run_jobs
+-- Job queue for triggering Python worker runs from the web app.
+-- The web app inserts a 'pending' row; the Python runner claims
+-- and executes it via the 'watch-jobs' command.
+-- Service role (Python runner) bypasses RLS for UPDATE/SELECT.
+-- ============================================================
+CREATE TABLE public.run_jobs (
+    id           BIGSERIAL    PRIMARY KEY,
+    user_id      UUID         NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    status       TEXT         NOT NULL DEFAULT 'pending'
+                              CHECK (status IN ('pending', 'running', 'done', 'failed')),
+    options      JSONB        NOT NULL DEFAULT '{}',
+    result       JSONB,
+    error        TEXT,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    started_at   TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ
+);
+
+ALTER TABLE public.run_jobs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "run_jobs: select own"
+    ON public.run_jobs FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "run_jobs: insert own"
+    ON public.run_jobs FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+-- ============================================================
+-- One-time migration (existing projects that already have
+-- processed_emails without message_received_at). Run in SQL Editor:
+--   ALTER TABLE public.processed_emails
+--     ADD COLUMN IF NOT EXISTS message_received_at TIMESTAMPTZ;
+-- ============================================================

@@ -36,8 +36,8 @@ def main() -> None:
     """
     Entrypoint for MailPilot CLI.
     """
-    # db-check only needs the database file path, not OpenAI or Gmail secrets.
-    if len(sys.argv) > 1 and sys.argv[1] == "db-check":
+    # supabase-check only needs Supabase URL + service role key, not OpenAI.
+    if len(sys.argv) > 1 and sys.argv[1] == "supabase-check":
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",

@@ -3,7 +3,8 @@ from dataclasses import dataclass
 
 import mailpilot.cli as cli_module
 from mailpilot.email_processor import EmailProcessor
-from mailpilot.models import Account
+
+from .fakes import InMemoryAccountRepository, InMemoryProcessedEmailRepository
 
 
 @dataclass
@@ -31,7 +32,6 @@ class RecordingGmailClient:
         self.queries.append(query)
         return []
 
-    # Unused but required by EmailProcessor in other paths
     def get_message(self, account, message_id):
         raise AssertionError("get_message should not be called in this test")
 
@@ -45,58 +45,20 @@ class RecordingGmailClient:
         raise AssertionError("flag_important should not be called in this test")
 
 
-def _dummy_account() -> Account:
-    from datetime import datetime, timezone
-
-    return Account(
-        id=1,
-        email="user@example.com",
-        display_name=None,
-        token_json="{}",
-        active=True,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
-    )
-
-
 def test_email_processor_uses_custom_search_query(monkeypatch):
     """
     When a custom search_query is provided, EmailProcessor should pass it
     through to GmailClient.list_messages.
     """
-    # Avoid any real DB access by short-circuiting connection_ctx
-    from mailpilot import database
+    acc_repo = InMemoryAccountRepository()
+    acc_repo.add(email="user@example.com", token_json="{}")
+    proc_repo = InMemoryProcessedEmailRepository()
 
     @contextmanager
-    def _fake_ctx():
-        class DummyConn:
-            def commit(self): ...
+    def _ctx():
+        yield acc_repo, proc_repo
 
-            def close(self): ...
-
-        conn = DummyConn()
-        try:
-            yield conn
-        finally:
-            conn.close()
-
-    monkeypatch.setattr("mailpilot.email_processor.connection_ctx", _fake_ctx)
-    monkeypatch.setattr(
-        "mailpilot.email_processor.AccountRepository",
-        lambda conn: type(
-            "Repo",
-            (),
-            {"list_active": lambda self: [_dummy_account()]},
-        )(),
-    )
-    monkeypatch.setattr(
-        "mailpilot.email_processor.ProcessedEmailRepository",
-        lambda conn: type(
-            "PRepo",
-            (),
-            {"is_processed": lambda self, account_id, msg_id: False},
-        )(),
-    )
+    monkeypatch.setattr("mailpilot.email_processor.repository_context", _ctx)
 
     gmail = RecordingGmailClient()
     processor = EmailProcessor(
@@ -131,4 +93,3 @@ def test_cli_passes_raw_query_to_scheduler(monkeypatch):
 
     assert captured["dry_run"] is True
     assert captured["search_query"] == "from:boss@example.com newer_than:7d"
-

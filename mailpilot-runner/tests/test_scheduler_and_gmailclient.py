@@ -12,6 +12,7 @@ def _dummy_account() -> Account:
 
     return Account(
         id=1,
+        user_id="00000000-0000-0000-0000-000000000001",
         email="user@example.com",
         display_name=None,
         token_json="{}",

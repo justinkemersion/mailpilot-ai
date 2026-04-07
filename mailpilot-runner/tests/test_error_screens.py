@@ -1,6 +1,5 @@
 import os
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -11,8 +10,11 @@ def _run_main_with_args(monkeypatch, capsys, args, env: dict[str, str]) -> str:
     original_argv = sys.argv
     try:
         sys.argv = ["mailpilot.main", *args]
-        # Ensure a clean env for the keys we care about
-        for key in ["OPENAI_API_KEY", "GOOGLE_CREDENTIALS_FILE"]:
+        for key in [
+            "OPENAI_API_KEY",
+            "SUPABASE_URL",
+            "SUPABASE_SERVICE_ROLE_KEY",
+        ]:
             if key in os.environ:
                 monkeypatch.delenv(key, raising=False)
         for key, value in env.items():
@@ -34,28 +36,23 @@ def test_friendly_error_for_missing_openai_key(monkeypatch, capsys):
         capsys,
         ["run-once"],
         env={
-            # Intentionally omit OPENAI_API_KEY
+            "SUPABASE_URL": "http://localhost",
+            "SUPABASE_SERVICE_ROLE_KEY": "x",
         },
     )
     assert "Missing OpenAI API key" in output
     assert "OPENAI_API_KEY" in output
 
 
-def test_friendly_error_for_missing_gmail_credentials_file(monkeypatch, capsys, tmp_path):
-    dummy_key = "sk-test"
-    nonexistent_path = tmp_path / "does_not_exist.json"
-
+def test_friendly_error_for_missing_supabase_credentials(monkeypatch, capsys):
     output = _run_main_with_args(
         monkeypatch,
         capsys,
-        ["add-account"],
+        ["run-once"],
         env={
-            "OPENAI_API_KEY": dummy_key,
-            "GOOGLE_CREDENTIALS_FILE": str(nonexistent_path),
+            "OPENAI_API_KEY": "sk-test",
         },
     )
 
-    assert "Missing or invalid Gmail OAuth credentials" in output
-    assert "GOOGLE_CREDENTIALS_FILE" in output
-    assert str(nonexistent_path) in output
-
+    assert "Missing Supabase configuration" in output
+    assert "SUPABASE_URL" in output

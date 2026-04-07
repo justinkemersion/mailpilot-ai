@@ -1,7 +1,9 @@
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 from mailpilot.email_processor import EmailProcessor
-from mailpilot.models import Account
+
+from .fakes import InMemoryAccountRepository, InMemoryProcessedEmailRepository
 
 
 @dataclass
@@ -19,12 +21,8 @@ class DummyClassifier:
 
 
 class RecordingGmailClient:
-    """
-    Records per-account Gmail operations to verify isolation.
-    """
-
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []  # (operation, account_email)
+        self.calls: list[tuple[str, str]] = []
 
     def ensure_labels(self, account):
         self.calls.append(("ensure_labels", account.email))
@@ -32,7 +30,6 @@ class RecordingGmailClient:
 
     def list_messages(self, account, label_ids=None, query=None, max_results=100):
         self.calls.append(("list_messages", account.email))
-        # Return a single shared message id for all accounts to test isolation.
         return ["shared-msg-id"]
 
     def get_message(self, account, message_id):
@@ -68,47 +65,20 @@ class RecordingGmailClient:
         self.calls.append(("flag_important", account.email))
 
 
-def _dummy_accounts():
-    from datetime import datetime, timezone
-
-    now = datetime.now(timezone.utc)
-    return (
-        Account(
-            id=1,
-            email="account_a@example.com",
-            display_name=None,
-            token_json="{}",
-            active=True,
-            created_at=now,
-            updated_at=now,
-        ),
-        Account(
-            id=2,
-            email="account_b@example.com",
-            display_name=None,
-            token_json="{}",
-            active=True,
-            created_at=now,
-            updated_at=now,
-        ),
-    )
-
-
 def test_multi_account_processed_ids_are_isolated(monkeypatch):
     """
     Same Gmail message id in two different accounts must be tracked separately.
     """
-    # Ensure we use an in-memory DB
-    monkeypatch.setenv("MAILPILOT_DB_PATH", ":memory:")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    acc_repo = InMemoryAccountRepository()
+    acc_repo.add(email="account_a@example.com", token_json="{}")
+    acc_repo.add(email="account_b@example.com", token_json="{}")
+    proc_repo = InMemoryProcessedEmailRepository()
 
-    from mailpilot import database
+    @contextmanager
+    def _ctx():
+        yield acc_repo, proc_repo
 
-    # Prepare two accounts in the real repositories.
-    with database.connection_ctx() as conn:
-        acct_repo = database.AccountRepository(conn)
-        acct_repo.add_or_update("account_a@example.com", "{}", None)
-        acct_repo.add_or_update("account_b@example.com", "{}", None)
+    monkeypatch.setattr("mailpilot.email_processor.repository_context", _ctx)
 
     gmail = RecordingGmailClient()
     processor = EmailProcessor(
@@ -117,31 +87,11 @@ def test_multi_account_processed_ids_are_isolated(monkeypatch):
         search_query=None,
     )
 
-    # Run once over all accounts.
     processor.process_all_accounts_once()
 
-    # Verify processed_emails contains one row per (account, message id) for the
-    # shared message id used in this test and limited to the two accounts we created.
-    with database.connection_ctx() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT pe.account_id, pe.gmail_message_id
-            FROM processed_emails pe
-            JOIN accounts a ON pe.account_id = a.id
-            WHERE pe.gmail_message_id = ?
-              AND a.email IN ('account_a@example.com', 'account_b@example.com')
-            """,
-            ("shared-msg-id",),
-        )
-        rows = cur.fetchall()
+    keys = [k for k in proc_repo.stored_keys() if k[1] == "shared-msg-id"]
+    assert len(keys) == 2
+    assert {k[0] for k in keys} == {1, 2}
 
-        # Expect exactly two rows with the same gmail_message_id but different account_id.
-        assert len(rows) == 2
-        account_ids = {row["account_id"] for row in rows}
-        assert len(account_ids) == 2
-
-    # Ensure Gmail operations were invoked for each of our test accounts independently.
     accounts_seen = {email for op, email in gmail.calls if op.startswith("list_messages")}
     assert {"account_a@example.com", "account_b@example.com"}.issubset(accounts_seen)
-

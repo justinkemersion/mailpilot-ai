@@ -1,5 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { redirect } from "next/navigation";
+import { HistoryTable, type ProcessedEmailRow } from "./HistoryTable";
+import { RunPanel } from "./RunPanel";
+import type { RunJobRow } from "@/app/api/run/route";
 
 interface ConnectedAccount {
   id: number;
@@ -17,6 +21,35 @@ async function getConnectedAccounts(userId: string): Promise<ConnectedAccount[]>
     .eq("active", true)
     .order("email");
   return (data as ConnectedAccount[]) ?? [];
+}
+
+async function getEmailHistory(userId: string): Promise<ProcessedEmailRow[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("processed_emails")
+    .select(
+      "id, gmail_message_id, account_id, accounts(email), category, subject, sender, processed_at, message_received_at, actions_taken, was_archived, applied_label_names"
+    )
+    .eq("user_id", userId)
+    // Newest in mailbox first when message_received_at is set (Gmail internalDate).
+    .order("message_received_at", { ascending: false, nullsFirst: false })
+    .order("processed_at", { ascending: false })
+    // Gmail list is newest-first; we insert in that order, so lower id = newer within the same second.
+    .order("id", { ascending: true })
+    .limit(50);
+  return (data as unknown as ProcessedEmailRow[]) ?? [];
+}
+
+async function getLatestJob(userId: string): Promise<RunJobRow | null> {
+  const svc = createServiceClient();
+  const { data } = await svc
+    .from("run_jobs")
+    .select("id, status, options, result, error, created_at, started_at, completed_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as RunJobRow | null) ?? null;
 }
 
 async function SignOutButton() {
@@ -44,7 +77,12 @@ export default async function DashboardPage({
 
   if (!user) redirect("/login");
 
-  const accounts = await getConnectedAccounts(user.id);
+  const [accounts, history, latestJob] = await Promise.all([
+    getConnectedAccounts(user.id),
+    getEmailHistory(user.id),
+    getLatestJob(user.id),
+  ]);
+
   const params = await searchParams;
   const justConnected = params.connected === "true";
   const connectError = params.error;
@@ -53,7 +91,7 @@ export default async function DashboardPage({
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       {/* Header */}
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
             MailPilot
           </h1>
@@ -66,7 +104,7 @@ export default async function DashboardPage({
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-6 py-10 space-y-8">
+      <main className="mx-auto max-w-5xl px-6 py-10 space-y-8">
         {/* Flash messages */}
         {justConnected && (
           <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700 dark:bg-green-950 dark:border-green-800 dark:text-green-400">
@@ -95,13 +133,7 @@ export default async function DashboardPage({
               href="/auth/google"
               className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 transition-colors dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
-              {/* Google "G" icon */}
-              <svg
-                viewBox="0 0 18 18"
-                width="16"
-                height="16"
-                aria-hidden="true"
-              >
+              <svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true">
                 <path
                   fill="currentColor"
                   d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615Z"
@@ -164,15 +196,20 @@ export default async function DashboardPage({
           )}
         </section>
 
-        {/* Phase placeholder */}
-        <section className="rounded-xl border border-zinc-200 bg-white px-6 py-8 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-            Email history
-          </h2>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Processed email history will appear here once the Python worker is
-            running (Phase 3).
-          </p>
+        {/* Run panel */}
+        <RunPanel initialJob={latestJob} />
+
+        {/* Email history */}
+        <section>
+          <div className="mb-4">
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+              Email history
+            </h2>
+            <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+              Last 50 emails processed by MailPilot across all connected accounts.
+            </p>
+          </div>
+          <HistoryTable rows={history} />
         </section>
       </main>
     </div>

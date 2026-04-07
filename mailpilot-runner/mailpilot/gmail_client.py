@@ -9,13 +9,11 @@ from typing import Any, TypeVar
 
 from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from .config import load_config
-from .database import AccountRepository, connection_ctx
 from .models import Account
+from .persistence import repository_context
 
 logger = logging.getLogger(__name__)
 
@@ -40,14 +38,13 @@ class GmailApiError(RuntimeError):
 class GmailAuthError(GmailApiError):
     """
     Raised when stored Gmail OAuth credentials cannot be used (expired refresh
-    token, revoked consent, etc.). User should run add-account again.
+    token, revoked consent, etc.). User should reconnect Gmail in the web app.
     """
 
 
 REAUTH_USER_HINT = (
-    "Re-authenticate with: python -m mailpilot.main add-account "
-    "(sign in again for that Gmail address). "
-    "OAuth clients in Google 'Testing' mode often require weekly re-consent."
+    "Re-authenticate by opening the MailPilot web app and using Connect Gmail again "
+    "for that address. OAuth clients in Google 'Testing' mode often require weekly re-consent."
 )
 
 
@@ -73,53 +70,6 @@ def _http_error_requires_reauth(exc: HttpError) -> bool:
 _T = TypeVar("_T")
 
 
-def add_account_via_oauth() -> None:
-    """
-    Run the installed-app OAuth flow and persist a new Gmail account.
-    """
-    config = load_config()
-    if not config.gmail_credentials_file or not config.gmail_credentials_file.exists():
-        raise RuntimeError(
-            "GOOGLE_CREDENTIALS_FILE must point to a valid OAuth client secrets JSON."
-        )
-
-    flow = InstalledAppFlow.from_client_secrets_file(
-        str(config.gmail_credentials_file),
-        scopes=SCOPES,
-    )
-    print(
-        "Gmail OAuth: the only scope needed is https://www.googleapis.com/auth/gmail.modify "
-        "(set this under your OAuth client in Google Cloud Console if prompted)."
-    )
-    creds = flow.run_local_server(port=0)
-
-    try:
-        service = build("gmail", "v1", credentials=creds)
-        profile = service.users().getProfile(userId="me").execute()
-    except RefreshError as exc:
-        raise GmailAuthError(
-            f"Gmail rejected the new OAuth session after sign-in. {REAUTH_USER_HINT}"
-        ) from exc
-    except HttpError as exc:
-        if _http_error_requires_reauth(exc):
-            raise GmailAuthError(
-                f"Gmail rejected credentials right after OAuth. {REAUTH_USER_HINT}"
-            ) from exc
-        raise GmailApiError(f"Failed to fetch Gmail profile during OAuth setup: {exc}") from exc
-    email_address = profile.get("emailAddress")
-
-    token_json = creds.to_json()
-
-    with connection_ctx() as conn:
-        repo = AccountRepository(conn)
-        account = repo.add_or_update(
-            email=email_address,
-            token_json=token_json,
-            display_name=email_address,
-        )
-        logger.info("Added/updated Gmail account: %s (id=%s)", account.email, account.id)
-
-
 def _build_credentials(account: Account) -> Credentials:
     info = json.loads(account.token_json)
     return Credentials.from_authorized_user_info(info, scopes=SCOPES)
@@ -141,6 +91,8 @@ class GmailMessage:
     snippet: str | None
     body: str | None
     labels: list[str]
+    # Gmail internalDate: milliseconds since Unix epoch (message arrival in mailbox).
+    internal_date_ms: int | None = None
 
 
 class GmailClient:
@@ -277,6 +229,13 @@ class GmailClient:
         snippet = msg.get("snippet")
         labels = msg.get("labelIds", [])
         body = _extract_body(msg.get("payload", {}))
+        raw_internal = msg.get("internalDate")
+        internal_ms: int | None = None
+        if raw_internal is not None:
+            try:
+                internal_ms = int(raw_internal)
+            except (TypeError, ValueError):
+                internal_ms = None
 
         return GmailMessage(
             id=msg["id"],
@@ -286,6 +245,7 @@ class GmailClient:
             snippet=snippet,
             body=body,
             labels=labels,
+            internal_date_ms=internal_ms,
         )
 
     def apply_labels(
@@ -372,44 +332,43 @@ class GmailClient:
         ``was_archived`` is accepted for API symmetry; INBOX is always re-added per product rules.
         """
         _ = was_archived
-        with connection_ctx() as conn:
-            account_repo = AccountRepository(conn)
+        with repository_context() as (account_repo, _):
             account = account_repo.get_by_email(account_email)
             if account is None:
                 raise GmailApiError(f"No active Gmail account found for {account_email!r}")
 
-        self.ensure_labels(account)
-        service = self._get_service(account)
-        labels_resource = service.users().labels()
-        existing = self._run_gmail(
-            account,
-            "list labels for undo",
-            lambda: labels_resource.list(userId="me").execute().get("labels", []),
-        )
-        name_to_id = {lbl["name"]: lbl["id"] for lbl in existing}
-        for name, lid in name_to_id.items():
-            self._label_cache[(account.id, name)] = lid
+            self.ensure_labels(account)
+            service = self._get_service(account)
+            labels_resource = service.users().labels()
+            existing = self._run_gmail(
+                account,
+                "list labels for undo",
+                lambda: labels_resource.list(userId="me").execute().get("labels", []),
+            )
+            name_to_id = {lbl["name"]: lbl["id"] for lbl in existing}
+            for name, lid in name_to_id.items():
+                self._label_cache[(account.id, name)] = lid
 
-        remove_ids: list[str] = []
-        for name in applied_labels:
-            lid = name_to_id.get(name)
-            if lid:
-                remove_ids.append(lid)
-            else:
-                logger.warning("Unknown label %r for undo; skipping removal", name)
+            remove_ids: list[str] = []
+            for name in applied_labels:
+                lid = name_to_id.get(name)
+                if lid:
+                    remove_ids.append(lid)
+                else:
+                    logger.warning("Unknown label %r for undo; skipping removal", name)
 
-        modify_body: dict[str, list[str]] = {
-            "addLabelIds": ["INBOX", "UNREAD"],
-            "removeLabelIds": remove_ids,
-        }
-        self._run_gmail(
-            account,
-            f"undo modifications for message {message_id}",
-            lambda: service.users()
-            .messages()
-            .modify(userId="me", id=message_id, body=modify_body)
-            .execute(),
-        )
+            modify_body: dict[str, list[str]] = {
+                "addLabelIds": ["INBOX", "UNREAD"],
+                "removeLabelIds": remove_ids,
+            }
+            self._run_gmail(
+                account,
+                f"undo modifications for message {message_id}",
+                lambda: service.users()
+                .messages()
+                .modify(userId="me", id=message_id, body=modify_body)
+                .execute(),
+            )
 
 
 class ForbiddenGmailActionError(RuntimeError):

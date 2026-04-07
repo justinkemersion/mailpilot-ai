@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from email.utils import parseaddr
 
 from .ai_classifier import ClassificationError, Classifier, OpenAIClassifier
@@ -15,10 +15,10 @@ from .config import (
     get_safe_sender_domains,
     get_safe_senders,
 )
-from .database import (
-    AccountRepository,
-    ProcessedEmailRepository,
-    connection_ctx,
+from .persistence import (
+    SupabaseAccountRepository,
+    SupabaseProcessedEmailRepository,
+    repository_context,
 )
 from .gmail_client import GmailApiError, GmailAuthError, GmailClient, SafeGmailClient
 from .models import Account
@@ -103,7 +103,7 @@ class EmailProcessor:
         if account.email not in self._accounts_needing_reauth:
             self._accounts_needing_reauth.append(account.email)
         logger.error(
-            "%s — skipping this account until you sign in again (python -m mailpilot.main add-account).",
+            "%s — skipping this account until the user reconnects Gmail in the MailPilot web app.",
             account.email,
         )
 
@@ -129,7 +129,7 @@ class EmailProcessor:
         """
         self._dry_run = True
 
-    def _persist_refreshed_tokens(self, account_repo: AccountRepository) -> None:
+    def _persist_refreshed_tokens(self, account_repo: SupabaseAccountRepository) -> None:
         """Save any OAuth tokens that were auto-refreshed during this run."""
         getter = getattr(self._gmail_client, "get_refreshed_tokens", None)
         if getter is None:
@@ -152,10 +152,7 @@ class EmailProcessor:
         self._candidates_this_run = 0
         self._messages_processed_this_run = 0
         self._accounts_needing_reauth = []
-        with connection_ctx() as conn:
-            account_repo = AccountRepository(conn)
-            processed_repo = ProcessedEmailRepository(conn)
-
+        with repository_context() as (account_repo, processed_repo):
             accounts = account_repo.list_active()
             if not accounts:
                 logger.info("No active accounts configured")
@@ -189,7 +186,7 @@ class EmailProcessor:
     def _process_account(
         self,
         account: Account,
-        processed_repo: ProcessedEmailRepository,
+        processed_repo: SupabaseProcessedEmailRepository,
     ) -> None:
         logger.info("Processing account %s", account.email)
 
@@ -284,8 +281,14 @@ class EmailProcessor:
                 )
                 continue
 
+            msg_received: datetime | None = None
+            internal_ms = getattr(msg, "internal_date_ms", None)
+            if internal_ms is not None:
+                msg_received = datetime.fromtimestamp(internal_ms / 1000.0, tz=UTC)
+
             try:
                 pe = processed_repo.mark_processed(
+                    user_id=account.user_id,
                     account_id=account.id,
                     gmail_message_id=msg.id,
                     category=classification.category,
@@ -293,8 +296,9 @@ class EmailProcessor:
                     gmail_thread_id=msg.thread_id,
                     raw_labels=",".join(msg.labels) if msg.labels else None,
                     sender=_sender_for_storage(msg.sender),
+                    message_received_at=msg_received,
                 )
-            except sqlite3.Error as exc:
+            except Exception as exc:
                 logger.error(
                     "Failed to persist processed email %s for account %s; skipping actions: %s",
                     msg.id,

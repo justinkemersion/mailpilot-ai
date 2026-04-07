@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MailPilot Web
 
-## Getting Started
+Next.js **App Router** app: **Supabase Auth**, **Google OAuth** (Gmail refresh tokens stored in Supabase), **dashboard** (connected accounts, email history, “Process inbox”, undo).
 
-First, run the development server:
+## How it fits the monorepo
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+The web app is the **control plane**. It does **not** run the Python classifier or bulk Gmail processing. Those run in [`mailpilot-runner`](../mailpilot-runner). The two communicate through **Supabase** (e.g. `run_jobs`, `processed_emails`, `accounts`). Rationale and tradeoffs: [root `README.md`](../README.md#standalone-runner--web-app-why-this-pattern).
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Boundaries and migration notes: [`ARCHETECTURE.md`](./ARCHETECTURE.md).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. **Environment**
+
+   ```bash
+   cp .env.local.example .env.local
+   ```
+
+   Fill in at least:
+
+   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY` (server-only; required for some API routes such as job status hydration)
+   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_APP_URL` (must match Google Cloud OAuth redirect URIs)
+
+2. **Install and dev server**
+
+   ```bash
+   npm install
+   npm run dev
+   ```
+
+3. **Database** — Apply [`supabase/schema.sql`](./supabase/schema.sql) (and any [`supabase/migrations/`](./supabase/migrations/) files) in the Supabase SQL Editor, or use the Supabase CLI if the project is linked.
+
+4. **Processing email** — Link Gmail in the UI, then run the Python worker, e.g.:
+
+   ```bash
+   cd ../mailpilot-runner
+   source .venv/bin/activate
+   python -m mailpilot.main watch-jobs
+   ```
+
+   Use **Process inbox** on the dashboard to queue work; `watch-jobs` picks up `run_jobs`. Alternatively use `run-once` / `run` without the queue.
+
+## Scripts
+
+| Command | Purpose |
+|--------|---------|
+| `npm run dev` | Local dev (Turbopack per project config) |
+| `npm run build` / `npm start` | Production build and serve |
+| `npm run lint` | ESLint |
+
+Optional: `npx tsx --env-file=.env.local scripts/test-supabase.ts` — quick connectivity check (see script header).
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [Next.js documentation](https://nextjs.org/docs)
+- [Supabase + Next.js](https://supabase.com/docs/guides/getting-started/tutorials/with-nextjs)

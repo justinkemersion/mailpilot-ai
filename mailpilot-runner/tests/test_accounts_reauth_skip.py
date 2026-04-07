@@ -1,10 +1,13 @@
 """Skip accounts with expired/revoked Gmail OAuth while processing others."""
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from types import SimpleNamespace
 
 from mailpilot.email_processor import EmailProcessor
 from mailpilot.gmail_client import GmailAuthError
+
+from .fakes import InMemoryAccountRepository, InMemoryProcessedEmailRepository
 
 
 @dataclass
@@ -31,7 +34,7 @@ class MixedReauthGmailClient:
         if account.email == "stale@example.com":
             raise GmailAuthError(
                 "stale@example.com: Gmail OAuth token could not be refreshed. "
-                "Re-authenticate with: python -m mailpilot.main add-account"
+                "Reconnect via the MailPilot web app."
             )
         return ["m-good-1"]
 
@@ -62,15 +65,16 @@ class DummyWorkClassifier:
 
 
 def test_skips_stale_oauth_account_and_processes_remaining(monkeypatch):
-    from mailpilot import database
+    acc_repo = InMemoryAccountRepository()
+    acc_repo.add(email="stale@example.com", token_json="{}")
+    acc_repo.add(email="good@example.com", token_json="{}")
+    proc_repo = InMemoryProcessedEmailRepository()
 
-    monkeypatch.setenv("MAILPILOT_DB_PATH", ":memory:")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    @contextmanager
+    def _ctx():
+        yield acc_repo, proc_repo
 
-    with database.connection_ctx() as conn:
-        repo = database.AccountRepository(conn)
-        repo.add_or_update("stale@example.com", "{}", None)
-        repo.add_or_update("good@example.com", "{}", None)
+    monkeypatch.setattr("mailpilot.email_processor.repository_context", _ctx)
 
     gmail = MixedReauthGmailClient()
     processor = EmailProcessor(
