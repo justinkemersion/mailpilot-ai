@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 from dataclasses import dataclass, field
 from email.utils import parseaddr
-from typing import List
 
 from .ai_classifier import ClassificationError, Classifier, OpenAIClassifier
 from .config import (
@@ -23,8 +23,16 @@ from .database import (
 from .gmail_client import GmailApiError, GmailAuthError, GmailClient, SafeGmailClient
 from .models import Account
 
-
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AppliedActionSummary:
+    """What MailPilot changed in Gmail for one message (for history / undo)."""
+
+    actions_taken: str
+    was_archived: bool
+    label_names: list[str]
 
 
 @dataclass
@@ -263,13 +271,14 @@ class EmailProcessor:
                 continue
 
             try:
-                processed_repo.mark_processed(
+                pe = processed_repo.mark_processed(
                     account_id=account.id,
                     gmail_message_id=msg.id,
                     category=classification.category,
                     subject=msg.subject,
                     gmail_thread_id=msg.thread_id,
                     raw_labels=",".join(msg.labels) if msg.labels else None,
+                    sender=msg.sender,
                 )
             except sqlite3.Error as exc:
                 logger.error(
@@ -281,7 +290,7 @@ class EmailProcessor:
                 continue
 
             try:
-                self._apply_actions(
+                summary = self._apply_actions(
                     account=account,
                     msg_id=msg.id,
                     labels_map=labels_map,
@@ -293,7 +302,25 @@ class EmailProcessor:
                 logger.error("Gmail sign-in required for %s: %s", account.email, exc)
                 self._record_reauth_skip(account)
                 break
+            applied_json = json.dumps(summary.label_names) if summary.label_names else None
+            processed_repo.update_action_metadata(
+                pe.id,
+                summary.actions_taken,
+                summary.was_archived,
+                applied_json,
+            )
             self._messages_processed_this_run += 1
+
+    def _summarize_actions(self, undo_names: set[str], was_archived: bool) -> str:
+        parts: list[str] = []
+        if was_archived:
+            parts.append("Archived")
+        non_spam = sorted(n for n in undo_names if n != "SPAM")
+        if non_spam:
+            parts.append("Labeled: " + ", ".join(non_spam))
+        if "SPAM" in undo_names:
+            parts.append("Marked spam")
+        return "; ".join(parts)
 
     def _apply_actions(
         self,
@@ -303,8 +330,11 @@ class EmailProcessor:
         category: str,
         is_safe_sender: bool,
         noise_type: str | None = None,
-    ) -> None:
-        add_ids: List[str] = []
+    ) -> AppliedActionSummary:
+        add_ids: list[str] = []
+        add_names: list[str] = []
+        undo_names: set[str] = set()
+        was_archived = False
 
         if self._dry_run:
             logger.info(
@@ -313,25 +343,26 @@ class EmailProcessor:
                 account.email,
                 category,
             )
-            return
+            return AppliedActionSummary("", False, [])
 
-        # Global per-run label action safety limit.
         if self._label_actions_this_run >= self._max_label_actions_per_run:
             logger.warning(
                 "Label action limit reached (%s); skipping actions for message %s",
                 self._max_label_actions_per_run,
                 msg_id,
             )
-            return
+            return AppliedActionSummary("", False, [])
 
         def _maybe_add(label_name: str) -> None:
             lid = labels_map.get(label_name)
             if lid:
                 add_ids.append(lid)
+                add_names.append(label_name)
 
         if category == "important":
             _maybe_add("mailpilot/important")
             self._gmail_client.flag_important(account, msg_id)
+            undo_names.update(["IMPORTANT", "mailpilot/important"])
         elif category == "work":
             _maybe_add("work")
         elif category == "receipts":
@@ -343,6 +374,7 @@ class EmailProcessor:
             ):
                 self._gmail_client.archive_message(account, msg_id)
                 self._archives_this_run += 1
+                was_archived = True
         elif category == "newsletters":
             _maybe_add("newsletters")
             if noise_type == "security":
@@ -355,6 +387,7 @@ class EmailProcessor:
             elif self._archives_this_run < self._max_archives_per_run:
                 self._gmail_client.archive_message(account, msg_id)
                 self._archives_this_run += 1
+                was_archived = True
             else:
                 logger.warning(
                     "Archive limit reached (%s); skipping archive for %s",
@@ -371,6 +404,7 @@ class EmailProcessor:
             elif self._archives_this_run < self._max_archives_per_run:
                 self._gmail_client.archive_message(account, msg_id)
                 self._archives_this_run += 1
+                was_archived = True
             else:
                 logger.warning(
                     "Archive limit reached (%s); skipping archive for %s",
@@ -380,8 +414,6 @@ class EmailProcessor:
         elif category == "personal":
             _maybe_add("personal")
         elif category == "spam":
-            # Respect spam mark rate limit, using Gmail's built-in SPAM label.
-            # For safe senders, NEVER mark as spam.
             if is_safe_sender:
                 logger.info(
                     "Safe sender message %s classified as spam; skipping spam label due to safety rules",
@@ -391,6 +423,7 @@ class EmailProcessor:
                 spam_id = labels_map.get("SPAM")
                 if spam_id:
                     add_ids.append(spam_id)
+                    add_names.append("SPAM")
                 self._spam_marks_this_run += 1
             else:
                 logger.warning(
@@ -407,8 +440,16 @@ class EmailProcessor:
                     self._max_label_actions_per_run,
                     msg_id,
                 )
-                return
+                return AppliedActionSummary(
+                    self._summarize_actions(undo_names, was_archived),
+                    was_archived,
+                    sorted(undo_names),
+                )
             self._gmail_client.apply_labels(
                 account, msg_id, labels_to_add=add_ids, labels_to_remove=None
             )
             self._label_actions_this_run = projected
+            undo_names.update(add_names)
+
+        text = self._summarize_actions(undo_names, was_archived)
+        return AppliedActionSummary(text, was_archived, sorted(undo_names))

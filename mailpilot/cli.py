@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import json
 import logging
-from typing import Optional
 
 import typer
+from rich.console import Console
+from rich.table import Table
 
 from .config import load_config
 from .email_processor import RunResult
 from .scheduler import run_forever, run_once
-
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ def common() -> None:
 
 @app.command("run")
 def run_command(
-    interval: Optional[int] = typer.Option(
+    interval: int | None = typer.Option(
         None,
         "--interval",
         "-i",
@@ -102,7 +103,7 @@ def run_command(
         "--dry-run",
         help="Log intended actions without modifying Gmail labels or archiving.",
     ),
-    newer_than_days: Optional[int] = typer.Option(
+    newer_than_days: int | None = typer.Option(
         None,
         "--newer-than-days",
         help="Only consider messages newer than this many days.",
@@ -112,7 +113,7 @@ def run_command(
         "--include-read",
         help="Include read messages in addition to unread ones.",
     ),
-    query: Optional[str] = typer.Option(
+    query: str | None = typer.Option(
         None,
         "--query",
         help="Advanced: raw Gmail search query to refine INBOX candidates.",
@@ -145,7 +146,7 @@ def run_once_command(
         "--dry-run",
         help="Log intended actions without modifying Gmail labels or archiving.",
     ),
-    newer_than_days: Optional[int] = typer.Option(
+    newer_than_days: int | None = typer.Option(
         None,
         "--newer-than-days",
         help="Only consider messages newer than this many days.",
@@ -155,7 +156,7 @@ def run_once_command(
         "--include-read",
         help="Include read messages in addition to unread ones.",
     ),
-    query: Optional[str] = typer.Option(
+    query: str | None = typer.Option(
         None,
         "--query",
         help="Advanced: raw Gmail search query to refine INBOX candidates.",
@@ -237,3 +238,122 @@ def summarize_command(
             f"[{item['processed_at']}] {item['account_email']} "
             f"{item['category']}: {item['subject']}"
         )
+
+
+def _truncate(s: str | None, max_len: int = 48) -> str:
+    if s is None:
+        return ""
+    t = str(s).replace("\n", " ")
+    return t if len(t) <= max_len else t[: max_len - 1] + "…"
+
+
+def _history_console() -> Console:
+    # Rich 14 only fixes dimensions when *both* width and height are set; otherwise it probes the TTY (often 80 cols).
+    return Console(width=200, height=40, soft_wrap=True)
+
+
+@app.command("history")
+def history_command(
+    sender: str | None = typer.Option(None, "--sender", help="Filter: sender contains (SQL LIKE)."),
+    subject: str | None = typer.Option(None, "--subject", help="Filter: subject contains (SQL LIKE)."),
+    category: str | None = typer.Option(None, "--category", help="Filter: exact AI category."),
+    days_back: int = typer.Option(7, "--days-back", help="Only rows processed in the last N days."),
+    action: str | None = typer.Option(None, "--action", help="Filter: actions_taken contains (SQL LIKE)."),
+    limit: int = typer.Option(50, "--limit", help="Maximum rows to show or undo."),
+    message_id: str | None = typer.Option(
+        None, "--message-id", help="Exact Gmail message id (strong filter for undo)."
+    ),
+    account_email: str | None = typer.Option(
+        None, "--account-email", help="Restrict to a single linked Gmail account."
+    ),
+    undo: bool = typer.Option(False, "--undo", help="Reverse MailPilot actions for matching row(s)."),
+) -> None:
+    """
+    Search processed-email history in the local database; optionally undo Gmail changes.
+    """
+    from .database import AccountRepository, ProcessedEmailRepository, connection_ctx
+    from .gmail_client import GmailApiError, GmailAuthError, GmailClient, SafeGmailClient
+
+    with connection_ctx() as conn:
+        repo = ProcessedEmailRepository(conn)
+        rows = repo.search_history(
+            sender=sender,
+            subject=subject,
+            category=category,
+            days_back=days_back,
+            action=action,
+            limit=limit,
+            message_id=message_id,
+            account_email=account_email,
+        )
+
+    console = _history_console()
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Date", max_width=20)
+    table.add_column("Account", max_width=28)
+    table.add_column("Sender", max_width=36)
+    table.add_column("Subject", max_width=44)
+    table.add_column("Category", max_width=14)
+    table.add_column("Actions taken", max_width=52)
+
+    for row in rows:
+        table.add_row(
+            _truncate(row.get("processed_at"), 20),
+            _truncate(row.get("account_email"), 28),
+            _truncate(row.get("sender"), 36),
+            _truncate(row.get("subject"), 44),
+            _truncate(row.get("category"), 14),
+            _truncate(row.get("actions_taken"), 52),
+        )
+    console.print(table)
+
+    if not undo:
+        return
+
+    if not rows:
+        typer.echo("No rows matched; nothing to undo.")
+        raise typer.Exit(code=0)
+
+    if len(rows) > 1:
+        typer.confirm(
+            f"This will undo MailPilot actions for {len(rows)} message(s). Continue?",
+            abort=True,
+        )
+
+    client = SafeGmailClient(GmailClient())
+    with connection_ctx() as conn:
+        account_repo = AccountRepository(conn)
+        proc_repo = ProcessedEmailRepository(conn)
+        for row in rows:
+            actions_str = row.get("actions_taken") or ""
+            if "[UNDONE]" in actions_str:
+                typer.secho(
+                    f"Skip message {row.get('gmail_message_id')}: already marked undone.",
+                    fg=typer.colors.YELLOW,
+                )
+                continue
+            raw_labels = row.get("applied_label_names")
+            try:
+                label_list = json.loads(raw_labels) if raw_labels else []
+            except json.JSONDecodeError:
+                label_list = []
+            if not isinstance(label_list, list):
+                label_list = []
+            label_names = [str(x) for x in label_list]
+            was_archived = bool(row.get("was_archived"))
+            acc = row.get("account_email") or ""
+            mid = row.get("gmail_message_id") or ""
+            try:
+                client.undo_actions(acc, mid, label_names, was_archived)
+            except GmailAuthError as exc:
+                typer.secho(str(exc), fg=typer.colors.YELLOW)
+                continue
+            except GmailApiError as exc:
+                typer.secho(str(exc), fg=typer.colors.RED)
+                continue
+            proc_repo.mark_undone(int(row["id"]))
+        refreshed = client.get_refreshed_tokens()
+        for account_id, new_token_json in refreshed.items():
+            account_repo.update_token(account_id, new_token_json)
+
+    typer.secho("Undo complete.", fg=typer.colors.GREEN)

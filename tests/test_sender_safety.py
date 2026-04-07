@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC
 
 from mailpilot.email_processor import EmailProcessor
 from mailpilot.models import Account
@@ -67,7 +68,7 @@ class RecordingGmailClient:
 
 
 def _dummy_account() -> Account:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     return Account(
         id=1,
@@ -75,8 +76,8 @@ def _dummy_account() -> Account:
         display_name=None,
         token_json="{}",
         active=True,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
 
@@ -91,7 +92,6 @@ def test_whitelisted_sender_never_marked_as_spam(monkeypatch):
     )
 
     # Patch DB layer so we don't hit real SQLite
-    from mailpilot import database
 
     @contextmanager
     def _fake_ctx():
@@ -122,7 +122,8 @@ def test_whitelisted_sender_never_marked_as_spam(monkeypatch):
             (),
             {
                 "is_processed": lambda self, account_id, msg_id: False,
-                "mark_processed": lambda self, **kwargs: None,
+                "mark_processed": lambda self, **kwargs: type("Pe", (), {"id": 1})(),
+                "update_action_metadata": lambda self, *a, **k: None,
             },
         )(),
     )
@@ -142,7 +143,6 @@ def test_whitelisted_sender_newsletter_not_archived(monkeypatch):
         search_query=None,
     )
 
-    from mailpilot import database
 
     @contextmanager
     def _fake_ctx():
@@ -173,7 +173,8 @@ def test_whitelisted_sender_newsletter_not_archived(monkeypatch):
             (),
             {
                 "is_processed": lambda self, account_id, msg_id: False,
-                "mark_processed": lambda self, **kwargs: None,
+                "mark_processed": lambda self, **kwargs: type("Pe", (), {"id": 1})(),
+                "update_action_metadata": lambda self, *a, **k: None,
             },
         )(),
     )
@@ -194,7 +195,6 @@ def test_whitelisted_sender_important_allowed(monkeypatch):
         search_query=None,
     )
 
-    from mailpilot import database
 
     @contextmanager
     def _fake_ctx():
@@ -225,7 +225,8 @@ def test_whitelisted_sender_important_allowed(monkeypatch):
             (),
             {
                 "is_processed": lambda self, account_id, msg_id: False,
-                "mark_processed": lambda self, **kwargs: None,
+                "mark_processed": lambda self, **kwargs: type("Pe", (), {"id": 1})(),
+                "update_action_metadata": lambda self, *a, **k: None,
             },
         )(),
     )

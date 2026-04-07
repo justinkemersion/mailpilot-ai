@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional
+from typing import Any
 
 from .config import load_config
 from .models import Account, ProcessedEmail
-
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -27,11 +27,11 @@ class DbCheckReport:
     foreign_key_violation_count: int
     active_accounts: int
     processed_emails_total: int
-    account_summaries: List[tuple[int, str, int]]  # account id, email, processed count
+    account_summaries: list[tuple[int, str, int]]  # account id, email, processed count
     orphan_processed_count: int
     duplicate_key_groups: int
     cross_account_message_id_count: int
-    messages: List[str]
+    messages: list[str]
 
 
 def resolve_database_file_path() -> Path:
@@ -61,7 +61,7 @@ def check_database_at_path(path: Path) -> DbCheckReport:
     Open the database read-only and verify integrity, foreign keys, and
     multi-account isolation invariants.
     """
-    messages: List[str] = []
+    messages: list[str] = []
     if str(path) == ":memory:":
         return DbCheckReport(
             ok=False,
@@ -176,7 +176,7 @@ def check_database_at_path(path: Path) -> DbCheckReport:
             ORDER BY a.email
             """
         )
-        summaries: List[tuple[int, str, int]] = [
+        summaries: list[tuple[int, str, int]] = [
             (int(r["id"]), str(r["email"]), int(r["n"])) for r in cur.fetchall()
         ]
 
@@ -292,11 +292,46 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             subject TEXT,
             processed_at TEXT NOT NULL,
             raw_labels TEXT,
+            sender TEXT,
+            actions_taken TEXT,
+            was_archived INTEGER NOT NULL DEFAULT 0,
+            applied_label_names TEXT,
             FOREIGN KEY(account_id) REFERENCES accounts(id),
             UNIQUE(account_id, gmail_message_id)
         );
         """
     )
+    conn.commit()
+    _ensure_processed_emails_columns(conn)
+
+
+def _processed_emails_existing_columns(conn: sqlite3.Connection) -> set[str]:
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(processed_emails)")
+    return {str(row[1]) for row in cur.fetchall()}
+
+
+def _ensure_processed_emails_columns(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after v0.1 for existing SQLite files."""
+    existing = _processed_emails_existing_columns(conn)
+    if not existing:
+        return
+    alters: list[str] = []
+    if "sender" not in existing:
+        alters.append("ALTER TABLE processed_emails ADD COLUMN sender TEXT")
+    if "actions_taken" not in existing:
+        alters.append("ALTER TABLE processed_emails ADD COLUMN actions_taken TEXT")
+    if "was_archived" not in existing:
+        alters.append(
+            "ALTER TABLE processed_emails ADD COLUMN was_archived INTEGER NOT NULL DEFAULT 0"
+        )
+    if "applied_label_names" not in existing:
+        alters.append("ALTER TABLE processed_emails ADD COLUMN applied_label_names TEXT")
+    if not alters:
+        return
+    cur = conn.cursor()
+    for stmt in alters:
+        cur.execute(stmt)
     conn.commit()
 
 
@@ -304,8 +339,8 @@ class AccountRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def add_or_update(self, email: str, token_json: str, display_name: Optional[str]) -> Account:
-        now = datetime.now(timezone.utc).isoformat()
+    def add_or_update(self, email: str, token_json: str, display_name: str | None) -> Account:
+        now = datetime.now(UTC).isoformat()
         cur = self._conn.cursor()
         cur.execute(
             """
@@ -325,20 +360,20 @@ class AccountRepository:
             raise RuntimeError(f"Account row missing after upsert for {email!r}")
         return account
 
-    def get_by_id(self, account_id: int) -> Optional[Account]:
+    def get_by_id(self, account_id: int) -> Account | None:
         cur = self._conn.cursor()
         cur.execute("SELECT * FROM accounts WHERE id = ?", (account_id,))
         row = cur.fetchone()
         return self._row_to_account(row) if row else None
 
-    def get_by_email(self, email: str) -> Optional[Account]:
+    def get_by_email(self, email: str) -> Account | None:
         cur = self._conn.cursor()
         cur.execute("SELECT * FROM accounts WHERE email = ? AND active = 1", (email,))
         row = cur.fetchone()
         return self._row_to_account(row) if row else None
 
     def update_token(self, account_id: int, token_json: str) -> None:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         cur = self._conn.cursor()
         cur.execute(
             "UPDATE accounts SET token_json = ?, updated_at = ? WHERE id = ?",
@@ -346,7 +381,7 @@ class AccountRepository:
         )
         self._conn.commit()
 
-    def list_active(self) -> List[Account]:
+    def list_active(self) -> list[Account]:
         cur = self._conn.cursor()
         cur.execute("SELECT * FROM accounts WHERE active = 1 ORDER BY email")
         return [self._row_to_account(r) for r in cur.fetchall()]
@@ -384,17 +419,22 @@ class ProcessedEmailRepository:
         account_id: int,
         gmail_message_id: str,
         category: str,
-        subject: Optional[str],
-        gmail_thread_id: Optional[str],
-        raw_labels: Optional[str],
+        subject: str | None,
+        gmail_thread_id: str | None,
+        raw_labels: str | None,
+        sender: str | None = None,
+        actions_taken: str | None = None,
+        was_archived: bool = False,
+        applied_label_names: str | None = None,
     ) -> ProcessedEmail:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         cur = self._conn.cursor()
         cur.execute(
             """
             INSERT OR IGNORE INTO processed_emails
-            (account_id, gmail_message_id, gmail_thread_id, category, subject, processed_at, raw_labels)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (account_id, gmail_message_id, gmail_thread_id, category, subject, processed_at, raw_labels,
+             sender, actions_taken, was_archived, applied_label_names)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 account_id,
@@ -404,6 +444,10 @@ class ProcessedEmailRepository:
                 subject,
                 now,
                 raw_labels,
+                sender,
+                actions_taken,
+                1 if was_archived else 0,
+                applied_label_names,
             ),
         )
         self._conn.commit()
@@ -415,7 +459,98 @@ class ProcessedEmailRepository:
         row = cur.fetchone()
         return self._row_to_processed(row)
 
-    def summarize_recent(self, limit: int = 20) -> List[Dict[str, Any]]:
+    def update_action_metadata(
+        self,
+        processed_email_id: int,
+        actions_taken: str,
+        was_archived: bool,
+        applied_label_names: str | None,
+    ) -> None:
+        cur = self._conn.cursor()
+        cur.execute(
+            """
+            UPDATE processed_emails
+            SET actions_taken = ?, was_archived = ?, applied_label_names = ?
+            WHERE id = ?
+            """,
+            (actions_taken, 1 if was_archived else 0, applied_label_names, processed_email_id),
+        )
+        self._conn.commit()
+
+    def mark_undone(self, processed_email_id: int) -> None:
+        cur = self._conn.cursor()
+        cur.execute(
+            """
+            UPDATE processed_emails
+            SET actions_taken = TRIM(COALESCE(actions_taken, '') || ' [UNDONE]')
+            WHERE id = ?
+            """,
+            (processed_email_id,),
+        )
+        self._conn.commit()
+
+    def search_history(
+        self,
+        *,
+        sender: str | None = None,
+        subject: str | None = None,
+        category: str | None = None,
+        days_back: int = 7,
+        action: str | None = None,
+        limit: int = 50,
+        message_id: str | None = None,
+        account_email: str | None = None,
+    ) -> list[dict[str, Any]]:
+        cutoff = (datetime.now(UTC) - timedelta(days=days_back)).isoformat()
+        clauses: list[str] = ["pe.processed_at >= ?"]
+        params: list[Any] = [cutoff]
+
+        if sender is not None:
+            clauses.append("pe.sender LIKE ?")
+            params.append(f"%{sender}%")
+        if subject is not None:
+            clauses.append("pe.subject LIKE ?")
+            params.append(f"%{subject}%")
+        if category is not None:
+            clauses.append("pe.category = ?")
+            params.append(category)
+        if action is not None:
+            clauses.append("pe.actions_taken LIKE ?")
+            params.append(f"%{action}%")
+        if message_id is not None:
+            clauses.append("pe.gmail_message_id = ?")
+            params.append(message_id)
+        if account_email is not None:
+            clauses.append("a.email = ?")
+            params.append(account_email)
+
+        where_sql = " AND ".join(clauses)
+        params.append(limit)
+        cur = self._conn.cursor()
+        cur.execute(
+            f"""
+            SELECT pe.id,
+                   pe.account_id,
+                   pe.gmail_message_id,
+                   pe.category,
+                   pe.subject,
+                   pe.processed_at,
+                   pe.sender,
+                   pe.actions_taken,
+                   pe.was_archived,
+                   pe.applied_label_names,
+                   a.email AS account_email
+            FROM processed_emails pe
+            JOIN accounts a ON a.id = pe.account_id
+            WHERE {where_sql}
+            ORDER BY pe.processed_at DESC
+            LIMIT ?
+            """,
+            params,
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def summarize_recent(self, limit: int = 20) -> list[dict[str, Any]]:
         cur = self._conn.cursor()
         cur.execute(
             """
@@ -435,6 +570,7 @@ class ProcessedEmailRepository:
 
     @staticmethod
     def _row_to_processed(row: sqlite3.Row) -> ProcessedEmail:
+        keys = row.keys()
         return ProcessedEmail(
             id=row["id"],
             account_id=row["account_id"],
@@ -444,4 +580,8 @@ class ProcessedEmailRepository:
             subject=row["subject"],
             processed_at=datetime.fromisoformat(row["processed_at"]),
             raw_labels=row["raw_labels"],
+            sender=row["sender"] if "sender" in keys else None,
+            actions_taken=row["actions_taken"] if "actions_taken" in keys else None,
+            was_archived=bool(row["was_archived"]) if "was_archived" in keys else False,
+            applied_label_names=row["applied_label_names"] if "applied_label_names" in keys else None,
         )

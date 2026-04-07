@@ -5,18 +5,17 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, TypeVar
+from typing import Any, TypeVar
 
 from google.auth.exceptions import RefreshError
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.oauth2.credentials import Credentials
 
 from .config import load_config
-from .database import AccountRepository, connection_ctx, get_connection
+from .database import AccountRepository, connection_ctx
 from .models import Account
-
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +125,7 @@ def _build_credentials(account: Account) -> Credentials:
     return Credentials.from_authorized_user_info(info, scopes=SCOPES)
 
 
-def _build_service(account: Account) -> Tuple[Any, Credentials]:
+def _build_service(account: Account) -> tuple[Any, Credentials]:
     """Build a Gmail API service, returning (service, credentials)."""
     creds = _build_credentials(account)
     service: Any = build("gmail", "v1", credentials=creds, cache_discovery=False)
@@ -136,12 +135,12 @@ def _build_service(account: Account) -> Tuple[Any, Credentials]:
 @dataclass
 class GmailMessage:
     id: str
-    thread_id: Optional[str]
-    subject: Optional[str]
-    sender: Optional[str]
-    snippet: Optional[str]
-    body: Optional[str]
-    labels: List[str]
+    thread_id: str | None
+    subject: str | None
+    sender: str | None
+    snippet: str | None
+    body: str | None
+    labels: list[str]
 
 
 class GmailClient:
@@ -150,9 +149,9 @@ class GmailClient:
     """
 
     def __init__(self) -> None:
-        self._label_cache: Dict[Tuple[int, str], str] = {}
-        self._service_cache: Dict[int, Any] = {}
-        self._creds_cache: Dict[int, Tuple[Credentials, str]] = {}
+        self._label_cache: dict[tuple[int, str], str] = {}
+        self._service_cache: dict[int, Any] = {}
+        self._creds_cache: dict[int, tuple[Credentials, str]] = {}
 
     def _clear_account_session(self, account_id: int) -> None:
         """Drop cached Google client so the next call rebuilds credentials."""
@@ -192,20 +191,20 @@ class GmailClient:
             self._creds_cache[account.id] = (creds, account.token_json)
         return self._service_cache[account.id]
 
-    def get_refreshed_tokens(self) -> Dict[int, str]:
+    def get_refreshed_tokens(self) -> dict[int, str]:
         """
         Return {account_id: new_token_json} for any credentials that were
         refreshed since the service was built. Call after a processing run
         to persist updated tokens.
         """
-        updated: Dict[int, str] = {}
+        updated: dict[int, str] = {}
         for account_id, (creds, original_json) in self._creds_cache.items():
             current_json = creds.to_json()
             if current_json != original_json:
                 updated[account_id] = current_json
         return updated
 
-    def ensure_labels(self, account: Account) -> Dict[str, str]:
+    def ensure_labels(self, account: Account) -> dict[str, str]:
         """
         Ensure required labels exist for the account, returning name -> id mapping.
         """
@@ -241,10 +240,10 @@ class GmailClient:
     def list_messages(
         self,
         account: Account,
-        label_ids: Optional[List[str]] = None,
-        query: Optional[str] = None,
+        label_ids: list[str] | None = None,
+        query: str | None = None,
         max_results: int = 100,
-    ) -> List[str]:
+    ) -> list[str]:
         service = self._get_service(account)
         kwargs = {"userId": "me", "maxResults": max_results}
         if label_ids:
@@ -293,11 +292,11 @@ class GmailClient:
         self,
         account: Account,
         message_id: str,
-        labels_to_add: Optional[List[str]] = None,
-        labels_to_remove: Optional[List[str]] = None,
+        labels_to_add: list[str] | None = None,
+        labels_to_remove: list[str] | None = None,
     ) -> None:
         service = self._get_service(account)
-        modify_body: Dict[str, List[str]] = {}
+        modify_body: dict[str, list[str]] = {}
         if labels_to_add:
             modify_body["addLabelIds"] = labels_to_add
         if labels_to_remove:
@@ -333,7 +332,7 @@ class GmailClient:
         Apply both Gmail IMPORTANT and mailpilot/important labels, using
         the label cache populated by ensure_labels when available.
         """
-        label_ids: List[str] = []
+        label_ids: list[str] = []
         important_id = self._label_cache.get((account.id, "IMPORTANT"))
         if important_id:
             label_ids.append(important_id)
@@ -360,6 +359,58 @@ class GmailClient:
         if label_ids:
             self.apply_labels(account, message_id, labels_to_add=label_ids, labels_to_remove=None)
 
+    def undo_actions(
+        self,
+        account_email: str,
+        message_id: str,
+        applied_labels: list[str],
+        was_archived: bool,
+    ) -> None:
+        """
+        Reverse MailPilot modifications: restore INBOX + UNREAD, remove applied labels.
+
+        ``was_archived`` is accepted for API symmetry; INBOX is always re-added per product rules.
+        """
+        _ = was_archived
+        with connection_ctx() as conn:
+            account_repo = AccountRepository(conn)
+            account = account_repo.get_by_email(account_email)
+            if account is None:
+                raise GmailApiError(f"No active Gmail account found for {account_email!r}")
+
+        self.ensure_labels(account)
+        service = self._get_service(account)
+        labels_resource = service.users().labels()
+        existing = self._run_gmail(
+            account,
+            "list labels for undo",
+            lambda: labels_resource.list(userId="me").execute().get("labels", []),
+        )
+        name_to_id = {lbl["name"]: lbl["id"] for lbl in existing}
+        for name, lid in name_to_id.items():
+            self._label_cache[(account.id, name)] = lid
+
+        remove_ids: list[str] = []
+        for name in applied_labels:
+            lid = name_to_id.get(name)
+            if lid:
+                remove_ids.append(lid)
+            else:
+                logger.warning("Unknown label %r for undo; skipping removal", name)
+
+        modify_body: dict[str, list[str]] = {
+            "addLabelIds": ["INBOX", "UNREAD"],
+            "removeLabelIds": remove_ids,
+        }
+        self._run_gmail(
+            account,
+            f"undo modifications for message {message_id}",
+            lambda: service.users()
+            .messages()
+            .modify(userId="me", id=message_id, body=modify_body)
+            .execute(),
+        )
+
 
 class ForbiddenGmailActionError(RuntimeError):
     """
@@ -379,16 +430,16 @@ class SafeGmailClient:
 
     # Allowed operations (forwarded directly)
 
-    def ensure_labels(self, account: Account) -> Dict[str, str]:
+    def ensure_labels(self, account: Account) -> dict[str, str]:
         return self._inner.ensure_labels(account)
 
     def list_messages(
         self,
         account: Account,
-        label_ids: Optional[List[str]] = None,
-        query: Optional[str] = None,
+        label_ids: list[str] | None = None,
+        query: str | None = None,
         max_results: int = 100,
-    ) -> List[str]:
+    ) -> list[str]:
         return self._inner.list_messages(account, label_ids=label_ids, query=query, max_results=max_results)
 
     def get_message(self, account: Account, message_id: str) -> GmailMessage:
@@ -398,8 +449,8 @@ class SafeGmailClient:
         self,
         account: Account,
         message_id: str,
-        labels_to_add: Optional[List[str]] = None,
-        labels_to_remove: Optional[List[str]] = None,
+        labels_to_add: list[str] | None = None,
+        labels_to_remove: list[str] | None = None,
     ) -> None:
         self._inner.apply_labels(account, message_id, labels_to_add=labels_to_add, labels_to_remove=labels_to_remove)
 
@@ -409,7 +460,16 @@ class SafeGmailClient:
     def flag_important(self, account: Account, message_id: str) -> None:
         self._inner.flag_important(account, message_id)
 
-    def get_refreshed_tokens(self) -> Dict[int, str]:
+    def undo_actions(
+        self,
+        account_email: str,
+        message_id: str,
+        applied_labels: list[str],
+        was_archived: bool,
+    ) -> None:
+        self._inner.undo_actions(account_email, message_id, applied_labels, was_archived)
+
+    def get_refreshed_tokens(self) -> dict[int, str]:
         getter = getattr(self._inner, "get_refreshed_tokens", None)
         return getter() if getter else {}
 
@@ -431,24 +491,24 @@ class SafeGmailClient:
         )
 
 
-def _extract_body(payload: dict) -> Optional[str]:
+def _extract_body(payload: dict) -> str | None:
     """
     Extract a best-effort text body from a Gmail message payload,
     recursing into nested multipart structures (e.g. multipart/mixed
     containing multipart/alternative).
     """
 
-    def _decode_part(part: dict) -> Optional[str]:
+    def _decode_part(part: dict) -> str | None:
         data = part.get("body", {}).get("data")
         if not data:
             return None
         decoded_bytes = base64.urlsafe_b64decode(data.encode("utf-8"))
         return decoded_bytes.decode("utf-8", errors="ignore")
 
-    def _collect_parts(node: dict) -> List[dict]:
+    def _collect_parts(node: dict) -> list[dict]:
         """Flatten all leaf parts from a potentially nested multipart tree."""
         if "parts" in node:
-            result: List[dict] = []
+            result: list[dict] = []
             for child in node["parts"]:
                 result.extend(_collect_parts(child))
             return result

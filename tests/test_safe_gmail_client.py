@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import UTC
 
 import pytest
 
@@ -47,9 +48,18 @@ class DummyInnerClient:
     def flag_important(self, account: Account, message_id: str):
         self.calls.append(("flag_important", (account, message_id), {}))
 
+    def undo_actions(self, account_email: str, message_id: str, applied_labels, was_archived: bool):
+        self.calls.append(
+            (
+                "undo_actions",
+                (account_email, message_id),
+                {"applied_labels": applied_labels, "was_archived": was_archived},
+            )
+        )
+
 
 def _dummy_account() -> Account:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     return Account(
         id=1,
@@ -57,8 +67,8 @@ def _dummy_account() -> Account:
         display_name=None,
         token_json="{}",
         active=True,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
 
@@ -98,4 +108,17 @@ def test_safe_gmail_client_rejects_delete_and_trash_operations():
 
     with pytest.raises(ForbiddenGmailActionError):
         safe.batch_delete_messages(account, ["msg-1", "msg-2"])
+
+
+def test_safe_gmail_client_forwards_undo_actions():
+    inner = DummyInnerClient()
+    safe = SafeGmailClient(inner)
+    safe.undo_actions("a@example.com", "mid", ["work"], True)
+    assert inner.calls == [
+        (
+            "undo_actions",
+            ("a@example.com", "mid"),
+            {"applied_labels": ["work"], "was_archived": True},
+        )
+    ]
 

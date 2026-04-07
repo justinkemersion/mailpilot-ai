@@ -6,8 +6,9 @@ from typer.testing import CliRunner
 from mailpilot.database import (
     AccountRepository,
     ProcessedEmailRepository,
-    check_database_at_path,
     _init_schema,  # type: ignore[attr-defined]
+    _processed_emails_existing_columns,  # type: ignore[attr-defined]
+    check_database_at_path,
 )
 
 
@@ -137,6 +138,86 @@ def test_db_check_cli_ok(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.stdout + result.stderr
     assert "db-check: OK" in result.stdout
     assert "Integrity: ok" in result.stdout
+
+
+def test_processed_emails_migration_adds_columns(tmp_path, monkeypatch):
+    db_file = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_file)
+    conn.executescript(
+        """
+        CREATE TABLE accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL UNIQUE,
+            display_name TEXT,
+            token_json TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE processed_emails (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            gmail_message_id TEXT NOT NULL,
+            gmail_thread_id TEXT,
+            category TEXT NOT NULL,
+            subject TEXT,
+            processed_at TEXT NOT NULL,
+            raw_labels TEXT,
+            FOREIGN KEY(account_id) REFERENCES accounts(id),
+            UNIQUE(account_id, gmail_message_id)
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    conn2 = sqlite3.connect(db_file)
+    conn2.row_factory = sqlite3.Row
+    conn2.execute("PRAGMA foreign_keys=ON")
+    _init_schema(conn2)
+    conn2.close()
+
+    conn3 = sqlite3.connect(db_file)
+    cols = _processed_emails_existing_columns(conn3)
+    conn3.close()
+    assert {"sender", "actions_taken", "was_archived", "applied_label_names"}.issubset(cols)
+
+
+def test_search_history_and_mark_undone():
+    conn = _fresh_conn()
+    account_repo = AccountRepository(conn)
+    processed_repo = ProcessedEmailRepository(conn)
+    account = account_repo.add_or_update("hist@example.com", "{}", None)
+    pe = processed_repo.mark_processed(
+        account.id,
+        "gmsg-h1",
+        "newsletters",
+        "Weekly",
+        "th1",
+        None,
+        sender="news@example.com",
+    )
+    processed_repo.update_action_metadata(
+        pe.id,
+        "Archived; Labeled: newsletters",
+        True,
+        '["newsletters"]',
+    )
+    rows = processed_repo.search_history(
+        sender="news@",
+        category="newsletters",
+        days_back=7,
+        action="Archived",
+        limit=10,
+    )
+    assert len(rows) == 1
+    assert rows[0]["gmail_message_id"] == "gmsg-h1"
+    processed_repo.mark_undone(pe.id)
+    cur = conn.execute(
+        "SELECT actions_taken FROM processed_emails WHERE id = ?",
+        (pe.id,),
+    )
+    assert "[UNDONE]" in cur.fetchone()[0]
 
 
 def test_db_check_cli_fails_missing_file(tmp_path, monkeypatch):
