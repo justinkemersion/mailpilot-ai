@@ -54,6 +54,7 @@ def test_history_command_prints_table(_openai_key, monkeypatch):
     assert "Hello" in result.stdout
     assert "boss@" in result.stdout
     assert "work" in result.stdout
+    assert "abc123" in result.stdout
 
 
 def test_history_undo_calls_gmail_and_marks_undone(_openai_key, monkeypatch):

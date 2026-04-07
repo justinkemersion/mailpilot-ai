@@ -36,7 +36,7 @@ to ensure idempotent behavior.
   - Archive newsletters and promotions.
   - Flag important emails with an `IMPORTANT` / `mailpilot/important` label.
 - **Idempotent processing** using SQLite to track processed messages and avoid duplicates.
-- **Typer-based CLI** for running the processor, adding accounts, database checks, and summaries.
+- **Typer-based CLI** for running the processor, adding accounts, database checks, summaries, and **history with undo** (restore INBOX / labels using each message’s Gmail id).
 - **Safe senders** via environment variables so trusted addresses are not marked spam and are treated gently for archives.
 - **Per-run caps** on archives, spam marks, and label changes to limit blast radius.
 - **Graceful Gmail re-auth**: expired or revoked OAuth for one account skips that account only; others keep running, with a clear CLI summary.
@@ -278,6 +278,47 @@ Prints the most recent rows from processed email history (all categories), newes
 mailpilot summarize --limit 20
 ```
 
+#### `history`
+
+Search the **local SQLite** log of what MailPilot has already processed (per Gmail account). The table includes a **Gmail message ID** column so you can copy an id and target a single message for `--undo` without querying the database by hand.
+
+Undo uses the Gmail API to put the message back in the inbox (adds `INBOX` and `UNREAD`) and removes MailPilot-applied labels recorded for that row. Rows processed before undo metadata existed may only get inbox/unread restoration.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--days-back` | `7` | Only rows with `processed_at` in the last *N* days (UTC). |
+| `--limit` | `50` | Max rows shown (and max matched for `--undo`). |
+| `--account-email` | — | Restrict to one linked account (e.g. your Gmail address). |
+| `--sender` | — | `LIKE` filter on stored sender. |
+| `--subject` | — | `LIKE` filter on subject. |
+| `--category` | — | Exact match on AI category. |
+| `--action` | — | `LIKE` filter on human-readable actions (e.g. `archived`). |
+| `--message-id` | — | Exact Gmail message id (best for undoing one message). |
+| `--undo` | off | Reverse MailPilot’s recorded changes for all matched rows. If more than one row matches, you are prompted to confirm. |
+
+**Example: skim recent history for one account, then undo one archived message**
+
+1. List recent processed messages and note the **Gmail message ID** in the table (cyan column):
+
+```bash
+python -m mailpilot.main history \
+  --account-email you@gmail.com \
+  --days-back 30 \
+  --limit 20
+```
+
+2. Undo MailPilot’s actions for that message (use a `--days-back` window that still includes the row, or use a large value such as `365`):
+
+```bash
+python -m mailpilot.main history \
+  --account-email you@gmail.com \
+  --message-id 'PASTE_GMAIL_MESSAGE_ID_HERE' \
+  --days-back 30 \
+  --undo
+```
+
+The same `mailpilot history …` form works if `mailpilot` is on your PATH.
+
 #### Optional behavior via `.env`
 
 Archive and noise tuning (`MAILPILOT_ARCHIVE_SECURITY_NOISE`, `MAILPILOT_ARCHIVE_RECEIPTS`) and safe-sender / per-run caps are described in the [configuration table](#configuration-environment-variables).
@@ -299,7 +340,7 @@ If `mailpilot` is on the cron user’s PATH:
 ### Troubleshooting
 
 - **Missing OpenAI API key**  
-  Commands that load full config (`run`, `run-once`, `summarize`, …) require `OPENAI_API_KEY`. MailPilot shows a styled error panel with steps to add the key to `.env`.
+  Commands that load full config (`run`, `run-once`, `summarize`, `history`, …) require `OPENAI_API_KEY`. MailPilot shows a styled error panel with steps to add the key to `.env`.
 
 - **Missing or invalid Gmail OAuth client file**  
   `add-account` needs `GOOGLE_CREDENTIALS_FILE` pointing at the **client** JSON. A friendly error panel explains how to create it in Google Cloud Console.

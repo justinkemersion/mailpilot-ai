@@ -249,7 +249,7 @@ def _truncate(s: str | None, max_len: int = 48) -> str:
 
 def _history_console() -> Console:
     # Rich 14 only fixes dimensions when *both* width and height are set; otherwise it probes the TTY (often 80 cols).
-    return Console(width=200, height=40, soft_wrap=True)
+    return Console(width=240, height=40, soft_wrap=True)
 
 
 @app.command("history")
@@ -290,20 +290,28 @@ def history_command(
     console = _history_console()
     table = Table(show_header=True, header_style="bold")
     table.add_column("Date", max_width=20)
-    table.add_column("Account", max_width=28)
-    table.add_column("Sender", max_width=36)
-    table.add_column("Subject", max_width=44)
-    table.add_column("Category", max_width=14)
-    table.add_column("Actions taken", max_width=52)
+    table.add_column(
+        "Gmail message ID",
+        overflow="fold",
+        max_width=28,
+        style="cyan",
+    )
+    table.add_column("Account", max_width=26)
+    table.add_column("Sender", max_width=32)
+    table.add_column("Subject", max_width=40)
+    table.add_column("Category", max_width=12)
+    table.add_column("Actions taken", max_width=44)
 
     for row in rows:
+        mid = row.get("gmail_message_id")
         table.add_row(
             _truncate(row.get("processed_at"), 20),
-            _truncate(row.get("account_email"), 28),
-            _truncate(row.get("sender"), 36),
-            _truncate(row.get("subject"), 44),
-            _truncate(row.get("category"), 14),
-            _truncate(row.get("actions_taken"), 52),
+            str(mid) if mid is not None else "",
+            _truncate(row.get("account_email"), 26),
+            _truncate(row.get("sender"), 32),
+            _truncate(row.get("subject"), 40),
+            _truncate(row.get("category"), 12),
+            _truncate(row.get("actions_taken"), 44),
         )
     console.print(table)
 
