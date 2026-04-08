@@ -154,7 +154,7 @@ def test_scheduler_run_once_uses_email_processor(monkeypatch):
     calls = {"count": 0}
 
     class DummyProcessor:
-        def process_all_accounts_once(self_inner):
+        def process_all_accounts_once(self_inner, user_id=None):
             calls["count"] += 1
 
     monkeypatch.setattr(
@@ -171,7 +171,9 @@ def test_scheduler_run_forever_reraises_unexpected_errors(monkeypatch):
     monkeypatch.setattr("mailpilot.scheduler.signal.signal", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "mailpilot.scheduler.run_once",
-        lambda dry_run=False, search_query=None: (_ for _ in ()).throw(ValueError("unexpected")),
+        lambda dry_run=False, search_query=None, user_id=None: (_ for _ in ()).throw(
+            ValueError("unexpected")
+        ),
     )
 
     with pytest.raises(ValueError):

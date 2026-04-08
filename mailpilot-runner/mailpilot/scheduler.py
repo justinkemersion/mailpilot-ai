@@ -17,14 +17,19 @@ from .persistence import RunJobRepository
 logger = logging.getLogger(__name__)
 
 
-def run_once(dry_run: bool = False, search_query: str | None = None) -> RunResult:
+def run_once(
+    dry_run: bool = False,
+    search_query: str | None = None,
+    user_id: str | None = None,
+) -> RunResult:
     """
-    Process new emails for all accounts once. Returns a run summary.
+    Process new emails once. If ``user_id`` is set, only that user's accounts;
+    otherwise all active accounts (CLI / operator mode).
     """
     processor = EmailProcessor() if search_query is None else EmailProcessor(search_query=search_query)
     if dry_run:
         processor.enable_dry_run()
-    return processor.process_all_accounts_once()
+    return processor.process_all_accounts_once(user_id=user_id)
 
 
 def run_forever(
@@ -101,13 +106,34 @@ def watch_jobs(poll_interval: int = 5) -> None:
         "watch-jobs: polling every %s seconds for pending run_jobs…", poll_interval
     )
 
+    try:
+        n_reaped = job_repo.reap_stale_running_jobs()
+        if n_reaped > 0:
+            logger.info("watch-jobs: startup reaped %s stale running job(s)", n_reaped)
+    except Exception:  # noqa: BLE001
+        logger.exception("watch-jobs: startup stale job reaper failed; continuing")
+
     while not stop:
-        job = job_repo.claim_next_pending()
+        try:
+            n_reaped = job_repo.reap_stale_running_jobs()
+            if n_reaped > 0:
+                logger.info("watch-jobs: reaped %s stale running job(s)", n_reaped)
+        except Exception:  # noqa: BLE001
+            logger.exception("watch-jobs: stale job reaper failed; continuing")
+
+        try:
+            job = job_repo.claim_next_pending()
+        except Exception:  # noqa: BLE001
+            logger.exception("watch-jobs: claim failed; backing off")
+            time.sleep(poll_interval)
+            continue
+
         if job is None:
             time.sleep(poll_interval)
             continue
 
         job_id: int = int(job["id"])
+        job_user_id: str = str(job["user_id"])
         options: dict[str, Any] = job.get("options") or {}
         newer_than_days: int | None = options.get("newer_than_days")  # type: ignore[assignment]
         include_read: bool = bool(options.get("include_read", False))
@@ -122,15 +148,20 @@ def watch_jobs(poll_interval: int = 5) -> None:
         search_query: str | None = " ".join(terms) if terms else None
 
         logger.info(
-            "watch-jobs: claimed job %s (newer_than_days=%s, include_read=%s, dry_run=%s)",
+            "watch-jobs: claimed job %s user_id=%s (newer_than_days=%s, include_read=%s, dry_run=%s)",
             job_id,
+            job_user_id,
             newer_than_days,
             include_read,
             dry_run,
         )
 
         try:
-            result = run_once(dry_run=dry_run, search_query=search_query)
+            result = run_once(
+                dry_run=dry_run,
+                search_query=search_query,
+                user_id=job_user_id,
+            )
             job_repo.mark_done(job_id, _run_result_to_dict(result))
             logger.info(
                 "watch-jobs: job %s done — %s processed, %s archived",

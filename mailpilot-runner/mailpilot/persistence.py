@@ -77,15 +77,16 @@ class SupabaseAccountRepository:
             {"token_json": token_json, "updated_at": _iso_now()}
         ).eq("id", account_id).execute()
 
-    def list_active(self) -> list[Account]:
-        res = (
+    def list_active(self, user_id: str | None = None) -> list[Account]:
+        q = (
             self._client.table("accounts")
             .select("*")
             .eq("active", True)
             .eq("processing_enabled", True)
-            .order("email")
-            .execute()
         )
+        if user_id is not None:
+            q = q.eq("user_id", user_id)
+        res = q.order("email").execute()
         return [self._row_to_account(r) for r in (res.data or [])]
 
     @staticmethod
@@ -333,43 +334,47 @@ class RunJobRepository:
 
     def claim_next_pending(self) -> dict[str, Any] | None:
         """
-        Atomically claim the oldest pending job.
-
-        supabase-py 2.x does not support UPDATE … RETURNING, so we implement
-        optimistic claiming with a select-then-update pattern, which is safe
-        enough for a single-instance runner.
+        Atomically claim the oldest pending job via Postgres
+        ``FOR UPDATE SKIP LOCKED`` (function ``claim_next_run_job``).
         """
-        res = (
-            self._client.table("run_jobs")
-            .select("*")
-            .eq("status", "pending")
-            .order("created_at")
-            .limit(1)
-            .execute()
-        )
-        rows = res.data or []
-        if not rows:
+        try:
+            res = self._client.rpc("claim_next_run_job", {}).execute()
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "claim_next_run_job RPC failed (did you apply the migration?): %s",
+                exc,
+            )
+            raise
+
+        rows = res.data
+        if rows is None:
             return None
+        if isinstance(rows, list):
+            return rows[0] if rows else None
+        return rows  # type: ignore[return-value]
 
-        job = rows[0]
-        job_id = job["id"]
+    def reap_stale_running_jobs(self) -> int:
+        """
+        Mark run_jobs stuck in ``running`` for >15 minutes as failed.
+        """
+        try:
+            res = self._client.rpc("reap_stale_run_jobs", {}).execute()
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "reap_stale_run_jobs RPC failed (did you apply the migration?): %s",
+                exc,
+            )
+            raise
 
-        # Attempt to claim by transitioning status to 'running'
-        self._client.table("run_jobs").update(
-            {"status": "running", "started_at": _iso_now()}
-        ).eq("id", job_id).eq("status", "pending").execute()
-
-        # Re-fetch to confirm we won the race
-        confirm = (
-            self._client.table("run_jobs")
-            .select("*")
-            .eq("id", job_id)
-            .eq("status", "running")
-            .limit(1)
-            .execute()
-        )
-        confirmed = confirm.data or []
-        return confirmed[0] if confirmed else None
+        data = res.data
+        if data is None:
+            return 0
+        if isinstance(data, int):
+            return data
+        # supabase-py may return scalar as single-element list
+        if isinstance(data, list) and len(data) == 1:
+            return int(data[0])
+        return int(data)
 
     def mark_done(self, job_id: int, result: dict[str, Any]) -> None:
         self._client.table("run_jobs").update(

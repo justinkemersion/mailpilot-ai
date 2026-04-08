@@ -144,7 +144,7 @@ class EmailProcessor:
                     account.email,
                 )
 
-    def process_all_accounts_once(self) -> RunResult:
+    def process_all_accounts_once(self, user_id: str | None = None) -> RunResult:
         # Reset per-run counters for rate limiting and stats
         self._archives_this_run = 0
         self._spam_marks_this_run = 0
@@ -153,7 +153,7 @@ class EmailProcessor:
         self._messages_processed_this_run = 0
         self._accounts_needing_reauth = []
         with repository_context() as (account_repo, processed_repo):
-            accounts = account_repo.list_active()
+            accounts = account_repo.list_active(user_id=user_id)
             if not accounts:
                 logger.info("No active accounts configured")
                 return RunResult(

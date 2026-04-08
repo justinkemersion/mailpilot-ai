@@ -42,21 +42,25 @@ We use a monorepo to separate concerns. **CRITICAL RULE FOR AI:** Never mix the 
 
 ### Phase 3: Python Worker Refactor (Done)
 - Replace SQLite with Supabase-backed persistence (`mailpilot.persistence`).
-- Update the worker to iterate eligible accounts from Supabase (`list_active`: `active` and `processing_enabled` both true).
+- Update the worker to iterate eligible accounts from Supabase (`list_active`: `active` and `processing_enabled` both true; optional `user_id` filter for tenant isolation).
 - Typer CLI remains for `run`, `run-once`, `watch-jobs`, `history`, etc.
+- **`watch-jobs` + `run_jobs`:** The dashboard inserts a row with `user_id` = the signed-in user. The runner claims jobs via Postgres RPC **`claim_next_run_job()`** (`FOR UPDATE SKIP LOCKED`, single atomic update). Each run executes **`process_all_accounts_once(user_id=…)`** so **only that user’s** linked accounts are processed. **`reap_stale_run_jobs()`** marks `running` jobs older than 15 minutes as `failed` (startup + each poll). Apply the migration in [`supabase/migrations/`](supabase/migrations/) that defines these functions.
+- **`run-once` / `run_forever`:** No `user_id` is passed — operator mode processes **all** eligible accounts in the project.
 
 ### Phase 4: The Dashboard UI (Done)
 - **Layout:** Mobile-first dashboard: header with **Run sync** (opens a native `<dialog>` for look-back, include-read, and dry-run options), user session, and sign-out; main sections for connected Gmail accounts and email history.
 - **Connected accounts:** Compact cards with a **pause processing** switch (`PATCH /api/accounts/:id`) and **disconnect** (`DELETE /api/accounts/:id`). **Connect Gmail** remains the OAuth entry point.
-- **Manual runs:** Same queue as before: **Run sync** enqueues a `run_jobs` row; `watch-jobs` (or equivalent) on the runner picks it up—see [root `README.md`](../README.md#standalone-runner--web-app-why-this-pattern) for the runner/web split and tradeoffs.
+- **Manual runs:** **Run sync** enqueues a `run_jobs` row scoped to the current user; **`watch-jobs`** claims it atomically and runs the pipeline **only for that user’s accounts** (not the whole database). See [root `README.md`](../README.md#standalone-runner--web-app-why-this-pattern) for the runner/web split and tradeoffs.
 - **History:** Table with category filter pills, per-account color avatars (tooltip = email), parsed sender name + address, and icon-based **undo** calling `POST /api/undo` with loading state; on success the client calls **`router.refresh()`** so RSC data stays aligned with `[UNDONE]` in Supabase.
 
 ### Web API routes (dashboard-related)
 | Route | Role |
 |--------|------|
-| `POST/GET /api/run` | Queue and poll `run_jobs` for manual sync. |
+| `POST/GET /api/run` | Queue and poll `run_jobs` for manual sync (insert includes `user_id`; worker respects it). |
 | `PATCH /api/accounts/[id]` | Body `{ processing_enabled }`. Updates the row where `id` and `user_id` match the session; returns the updated account (no `token_json`). |
 | `DELETE /api/accounts/[id]` | Deletes the linked account where `id` and `user_id` match the session (cascades per schema). |
 | `POST /api/undo` | Body `{ processed_email_id }`. Loads `processed_emails` **joined to** `accounts` (service client + `user_id` checks), refreshes access with **OAuth2Client** + stored `refresh_token`, runs **Gmail** `users.messages.modify` (restore `INBOX`/`UNREAD`, remove labels from `applied_label_names`), then appends `[UNDONE]` to `actions_taken`. |
+
+**Undo and `run_jobs`:** Undo is **not** a queued worker job today; it is **only** `POST /api/undo` (session-scoped). If a future `job_type` (e.g. `undo`) is added to `run_jobs`, the worker handler must enforce `processed_emails.user_id == job.user_id` before calling Gmail.
 
 Connected-account cards use **`router.refresh()`** after successful PATCH/DELETE so the account list stays in sync with the server.

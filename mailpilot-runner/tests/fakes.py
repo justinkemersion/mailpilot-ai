@@ -68,11 +68,15 @@ class InMemoryAccountRepository:
                 processing_enabled=a.processing_enabled,
             )
 
-    def list_active(self) -> list[Account]:
-        return sorted(
-            (a for a in self._accounts.values() if a.active and a.processing_enabled),
-            key=lambda x: x.email,
-        )
+    def list_active(self, user_id: str | None = None) -> list[Account]:
+        def eligible(a: Account) -> bool:
+            if not (a.active and a.processing_enabled):
+                return False
+            if user_id is not None and a.user_id != user_id:
+                return False
+            return True
+
+        return sorted((a for a in self._accounts.values() if eligible(a)), key=lambda x: x.email)
 
 
 class InMemoryProcessedEmailRepository:
