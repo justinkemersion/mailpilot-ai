@@ -21,12 +21,23 @@ def run_once(
     dry_run: bool = False,
     search_query: str | None = None,
     user_id: str | None = None,
+    run_job_id: int | None = None,
+    run_job_repo: RunJobRepository | None = None,
 ) -> RunResult:
     """
     Process new emails once. If ``user_id`` is set, only that user's accounts;
     otherwise all active accounts (CLI / operator mode).
+
+    When ``run_job_id`` and ``run_job_repo`` are set (web-triggered jobs), the
+    processor reports incremental progress to ``run_jobs.progress``.
     """
-    processor = EmailProcessor() if search_query is None else EmailProcessor(search_query=search_query)
+    proc_kwargs: dict[str, Any] = {}
+    if search_query is not None:
+        proc_kwargs["search_query"] = search_query
+    if run_job_id is not None and run_job_repo is not None:
+        proc_kwargs["run_job_id"] = run_job_id
+        proc_kwargs["run_job_repo"] = run_job_repo
+    processor = EmailProcessor(**proc_kwargs)
     if dry_run:
         processor.enable_dry_run()
     return processor.process_all_accounts_once(user_id=user_id)
@@ -157,10 +168,13 @@ def watch_jobs(poll_interval: int = 5) -> None:
         )
 
         try:
+            job_repo.update_job_progress(job_id, "starting", "Starting sync…")
             result = run_once(
                 dry_run=dry_run,
                 search_query=search_query,
                 user_id=job_user_id,
+                run_job_id=job_id,
+                run_job_repo=job_repo,
             )
             job_repo.mark_done(job_id, _run_result_to_dict(result))
             logger.info(

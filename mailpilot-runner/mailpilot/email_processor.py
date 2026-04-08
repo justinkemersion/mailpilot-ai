@@ -16,6 +16,7 @@ from .config import (
     get_safe_senders,
 )
 from .persistence import (
+    RunJobRepository,
     SupabaseAccountRepository,
     SupabaseProcessedEmailRepository,
     repository_context,
@@ -75,6 +76,8 @@ class EmailProcessor:
         max_archives_per_run: int | None = None,
         max_spam_marks_per_run: int | None = None,
         search_query: str | None = "is:unread",
+        run_job_id: int | None = None,
+        run_job_repo: RunJobRepository | None = None,
     ) -> None:
         base_client = gmail_client or GmailClient()
         self._gmail_client = SafeGmailClient(base_client)
@@ -98,6 +101,16 @@ class EmailProcessor:
         self._safe_sender_domains = set(get_safe_sender_domains())
         self._safe_senders = set(get_safe_senders())
         self._accounts_needing_reauth: list[str] = []
+        self._run_job_id = run_job_id
+        self._run_job_repo = run_job_repo
+
+    def _report_progress(self, phase: str, message: str) -> None:
+        if self._run_job_id is None or self._run_job_repo is None:
+            return
+        try:
+            self._run_job_repo.update_job_progress(self._run_job_id, phase, message)
+        except Exception:
+            logger.debug("run_jobs progress update failed", exc_info=True)
 
     def _record_reauth_skip(self, account: Account) -> None:
         if account.email not in self._accounts_needing_reauth:
@@ -167,6 +180,11 @@ class EmailProcessor:
                     accounts_needing_reauth=[],
                 )
 
+            self._report_progress(
+                "accounts",
+                f"Syncing {len(accounts)} account(s)…",
+            )
+
             for account in accounts:
                 self._process_account(account, processed_repo)
 
@@ -189,9 +207,11 @@ class EmailProcessor:
         processed_repo: SupabaseProcessedEmailRepository,
     ) -> None:
         logger.info("Processing account %s", account.email)
+        self._report_progress("fetching", f"Opening {account.email}…")
 
         labels_map: dict[str, str] = {}
         if not self._dry_run:
+            self._report_progress("setup", f"Ensuring MailPilot labels for {account.email}…")
             try:
                 labels_map = self._gmail_client.ensure_labels(account)
             except GmailAuthError as exc:
@@ -235,7 +255,12 @@ class EmailProcessor:
             account.email,
             new_count,
         )
+        self._report_progress(
+            "analyzing",
+            f"{len(message_ids)} inbox message(s), {new_count} new — classifying for {account.email}…",
+        )
 
+        handled_new = 0
         for message_id in message_ids:
             if processed_repo.is_processed(account.id, message_id):
                 continue
@@ -273,6 +298,12 @@ class EmailProcessor:
 
             if self._dry_run:
                 self._messages_processed_this_run += 1
+                handled_new += 1
+                if handled_new % 7 == 0:
+                    self._report_progress(
+                        "processing",
+                        f"Processed {handled_new} new message(s) for {account.email}…",
+                    )
                 logger.info(
                     "DRY-RUN: would classify message %s for %s as %s",
                     msg.id,
@@ -328,6 +359,17 @@ class EmailProcessor:
                 applied_json,
             )
             self._messages_processed_this_run += 1
+            handled_new += 1
+            if handled_new % 7 == 0:
+                self._report_progress(
+                    "labels",
+                    f"Applied actions for {handled_new} message(s) on {account.email}…",
+                )
+
+        self._report_progress(
+            "account_done",
+            f"Finished {account.email} ({handled_new} new message(s) this run).",
+        )
 
     def _summarize_actions(self, undo_names: set[str], was_archived: bool) -> str:
         parts: list[str] = []

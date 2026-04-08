@@ -159,7 +159,7 @@ def test_scheduler_run_once_uses_email_processor(monkeypatch):
 
     monkeypatch.setattr(
         "mailpilot.scheduler.EmailProcessor",
-        lambda: DummyProcessor(),  # type: ignore[assignment]
+        lambda **kwargs: DummyProcessor(),  # type: ignore[assignment]
     )
 
     run_once()
@@ -171,8 +171,8 @@ def test_scheduler_run_forever_reraises_unexpected_errors(monkeypatch):
     monkeypatch.setattr("mailpilot.scheduler.signal.signal", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "mailpilot.scheduler.run_once",
-        lambda dry_run=False, search_query=None, user_id=None: (_ for _ in ()).throw(
-            ValueError("unexpected")
+        lambda dry_run=False, search_query=None, user_id=None, **kwargs: (
+            (_ for _ in ()).throw(ValueError("unexpected"))
         ),
     )
 

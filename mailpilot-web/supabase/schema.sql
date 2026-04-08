@@ -99,10 +99,15 @@ CREATE TABLE public.run_jobs (
     options      JSONB        NOT NULL DEFAULT '{}',
     result       JSONB,
     error        TEXT,
+    progress     JSONB,
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     started_at   TIMESTAMPTZ,
     completed_at TIMESTAMPTZ
 );
+
+ALTER TABLE public.run_jobs REPLICA IDENTITY FULL;
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.run_jobs;
 
 ALTER TABLE public.run_jobs ENABLE ROW LEVEL SECURITY;
 
@@ -152,7 +157,8 @@ BEGIN
     SET
       status = 'failed',
       error = 'Job timed out or worker crashed.',
-      completed_at = now()
+      completed_at = now(),
+      progress = NULL
     WHERE status = 'running'
       AND started_at IS NOT NULL
       AND started_at < now() - interval '15 minutes'

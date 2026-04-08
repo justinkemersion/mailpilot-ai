@@ -1,8 +1,12 @@
 "use client";
 
-import type { RunJobRow } from "@/app/api/run/route";
+import type {
+  RunJobProgress,
+  RunJobRow,
+} from "@/app/api/run/route";
+import { createClient } from "@/lib/supabase/client";
 import { Loader2, RefreshCw, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type JobStatus = RunJobRow["status"] | "idle";
 
@@ -18,8 +22,15 @@ const DEFAULT_OPTIONS: RunOptions = {
   dry_run: false,
 };
 
-const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
+/** Polling backup while Realtime may not deliver (e.g. browser / RLS / WS quirks). */
+const STATUS_POLL_INTERVAL_MS = 2000;
+
+async function fetchRunJobRow(jobId: number): Promise<RunJobRow | null> {
+  const res = await fetch(`/api/run?job_id=${jobId}`);
+  if (!res.ok) return null;
+  return (await res.json()) as RunJobRow | null;
+}
 
 function StatusIndicator({ status }: { status: JobStatus }) {
   if (status === "idle") return null;
@@ -90,65 +101,153 @@ function ResultSummary({ job }: { job: RunJobRow | null }) {
   return null;
 }
 
-interface Props {
-  initialJob: RunJobRow | null;
+function mergeJobRow(
+  prev: RunJobRow | null,
+  incoming: Record<string, unknown>
+): RunJobRow {
+  const row = incoming as Partial<RunJobRow> & { id?: number };
+  if (!prev || prev.id !== row.id) {
+    return incoming as unknown as RunJobRow;
+  }
+  return { ...prev, ...row } as RunJobRow;
 }
 
-export function RunSyncControl({ initialJob }: Props) {
+function ActivityLog({ entries }: { entries: RunJobProgress[] }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const lastKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    if (entries.length === 0) {
+      lastKeyRef.current = "";
+      return;
+    }
+    const last = entries[entries.length - 1];
+    const key = `${last.timestamp}:${last.message}`;
+    if (key === lastKeyRef.current) return;
+    lastKeyRef.current = key;
+    const el = scrollerRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    });
+  }, [entries]);
+
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="min-h-0 w-full min-w-0">
+      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        Activity
+      </p>
+      <div
+        ref={scrollerRef}
+        className="max-h-44 min-h-[5.5rem] overflow-y-auto overflow-x-hidden scroll-smooth rounded-md border border-zinc-200 bg-zinc-50/90 px-2.5 py-2 overscroll-y-contain dark:border-zinc-700 dark:bg-zinc-950/50"
+        aria-live="polite"
+        role="log"
+        aria-relevant="additions"
+      >
+        <ul className="space-y-2.5 pb-1">
+          {entries.map((entry) => (
+            <li
+              key={entry.timestamp}
+              className="animate-[run-job-activity-fade_0.35s_ease-out]"
+            >
+              <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400">
+                {entry.phase}
+              </span>
+              <p className="mt-0.5 text-xs leading-snug text-zinc-700 dark:text-zinc-300">
+                {entry.message}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+interface Props {
+  initialJob: RunJobRow | null;
+  variant?: "default" | "section";
+}
+
+export function RunSyncControl({ initialJob, variant = "default" }: Props) {
   const [job, setJob] = useState<RunJobRow | null>(initialJob);
   const [options, setOptions] = useState<RunOptions>(DEFAULT_OPTIONS);
   const [submitting, setSubmitting] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
+  const [activityLog, setActivityLog] = useState<RunJobProgress[]>([]);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeJobId =
+    job?.status === "pending" || job?.status === "running" ? job.id : null;
 
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-  }, []);
-
-  const pollStatus = useCallback(async () => {
-    try {
-      const res = await fetch("/api/run");
-      if (res.ok) {
-        const data: RunJobRow | null = await res.json();
-        setJob(data);
-        if (data && (data.status === "done" || data.status === "failed")) {
-          stopPolling();
-        }
-      }
-    } catch {
-      // keep polling
-    }
-  }, [stopPolling]);
-
-  const startPolling = useCallback(() => {
-    stopPolling();
-    setTimedOut(false);
-    pollingRef.current = setInterval(pollStatus, POLL_INTERVAL_MS);
-    timeoutRef.current = setTimeout(() => {
-      stopPolling();
-      setTimedOut(true);
-    }, POLL_TIMEOUT_MS);
-  }, [pollStatus, stopPolling]);
+  const progressEntry = job?.progress;
+  useEffect(() => {
+    if (!progressEntry?.timestamp) return;
+    const p = progressEntry;
+    setActivityLog((prev) => {
+      if (prev.some((e) => e.timestamp === p.timestamp)) return prev;
+      return [...prev, p].slice(-25);
+    });
+  }, [progressEntry]);
 
   useEffect(() => {
-    if (
-      initialJob &&
-      (initialJob.status === "pending" || initialJob.status === "running")
-    ) {
-      startPolling();
-    }
-    return stopPolling;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (activeJobId == null) return;
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`run_jobs_${activeJobId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "run_jobs",
+          filter: `id=eq.${activeJobId}`,
+        },
+        (payload) => {
+          setJob((prev) => mergeJobRow(prev, payload.new as Record<string, unknown>));
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          void fetchRunJobRow(activeJobId).then((data) => {
+            if (data?.id === activeJobId) setJob(data);
+          });
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [activeJobId]);
+
+  useEffect(() => {
+    if (activeJobId == null) return;
+
+    const poll = () => {
+      void fetchRunJobRow(activeJobId).then((data) => {
+        if (data?.id === activeJobId) setJob(data);
+      });
+    };
+
+    poll();
+    const interval = setInterval(poll, STATUS_POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [activeJobId]);
+
+  useEffect(() => {
+    if (activeJobId == null) return;
+    setTimedOut(false);
+    const t = setTimeout(() => {
+      setTimedOut(true);
+      void fetchRunJobRow(activeJobId).then((data) => {
+        if (data?.id === activeJobId) setJob(data);
+      });
+    }, POLL_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [activeJobId]);
 
   function closeModal() {
     dialogRef.current?.close();
@@ -157,6 +256,7 @@ export function RunSyncControl({ initialJob }: Props) {
   async function handleRun() {
     setSubmitting(true);
     setTimedOut(false);
+    setActivityLog([]);
     try {
       const res = await fetch("/api/run", {
         method: "POST",
@@ -164,9 +264,8 @@ export function RunSyncControl({ initialJob }: Props) {
         body: JSON.stringify(options),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const newJob: RunJobRow = await res.json();
+      const newJob = (await res.json()) as RunJobRow;
       setJob(newJob);
-      startPolling();
       closeModal();
     } catch (err) {
       console.error("Failed to queue run:", err);
@@ -180,17 +279,44 @@ export function RunSyncControl({ initialJob }: Props) {
   const isActive = currentStatus === "pending" || currentStatus === "running";
   const isFinished = job?.status === "done" || job?.status === "failed";
 
+  const isSection = variant === "section";
+  const buttonClass = isSection
+    ? "inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[9rem] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+    : "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[7.5rem] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700";
+
+  const rootClass = isSection
+    ? "flex w-full min-w-0 flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-none"
+    : "flex w-full min-w-0 flex-col gap-2";
+
   return (
-    <div className="flex w-full min-w-0 flex-col gap-2">
-      <button
-        type="button"
-        onClick={() => dialogRef.current?.showModal()}
-        disabled={submitting || isActive}
-        className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[7.5rem] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
-      >
-        <RefreshCw className="h-4 w-4 shrink-0" aria-hidden />
-        {submitting ? "Queuing…" : isActive ? "Running…" : "Run sync"}
-      </button>
+    <div className={rootClass}>
+      {/* Same DOM for default + section so SSR and client always match (avoid hydration mismatch). */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div
+          className={isSection ? "min-w-0" : "hidden min-w-0"}
+          aria-hidden={!isSection}
+        >
+          <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
+            Manual sync
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            Queue a one-time run for the worker (
+            <code className="rounded bg-zinc-100 px-1 text-[10px] dark:bg-zinc-800">
+              watch-jobs
+            </code>
+            ).
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => dialogRef.current?.showModal()}
+          disabled={submitting || isActive}
+          className={buttonClass}
+        >
+          <RefreshCw className="h-4 w-4 shrink-0" aria-hidden />
+          {submitting ? "Queuing…" : isActive ? "Running…" : "Run sync"}
+        </button>
+      </div>
 
       <dialog
         ref={dialogRef}
@@ -296,7 +422,9 @@ export function RunSyncControl({ initialJob }: Props) {
         </div>
       </dialog>
 
-      <div className="min-w-0 space-y-2">
+      <div
+        className={`flex min-w-0 flex-col gap-3${isSection ? " border-t border-zinc-100 pt-3 dark:border-zinc-800" : ""}`}
+      >
         <StatusIndicator status={currentStatus} />
         {timedOut && (
           <p className="text-xs text-yellow-700 dark:text-yellow-400">
@@ -306,6 +434,9 @@ export function RunSyncControl({ initialJob }: Props) {
             </code>
             ).
           </p>
+        )}
+        {(isActive || activityLog.length > 0) && (
+          <ActivityLog entries={activityLog} />
         )}
         {isFinished && <ResultSummary job={job} />}
       </div>

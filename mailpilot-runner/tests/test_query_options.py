@@ -78,7 +78,14 @@ def test_cli_passes_raw_query_to_scheduler(monkeypatch):
     """
     captured: dict[str, object] = {}
 
-    def fake_run_once(*, dry_run: bool, search_query: str | None, user_id: str | None = None):
+    def fake_run_once(
+        *,
+        dry_run: bool,
+        search_query: str | None,
+        user_id: str | None = None,
+        run_job_id: int | None = None,
+        run_job_repo: object | None = None,
+    ):
         captured["dry_run"] = dry_run
         captured["search_query"] = search_query
 

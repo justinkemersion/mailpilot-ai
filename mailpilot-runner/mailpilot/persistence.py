@@ -376,12 +376,21 @@ class RunJobRepository:
             return int(data[0])
         return int(data)
 
+    def update_job_progress(self, job_id: int, phase: str, message: str) -> None:
+        payload = {
+            "phase": phase,
+            "message": message,
+            "timestamp": _iso_now(),
+        }
+        self._client.table("run_jobs").update({"progress": payload}).eq("id", job_id).execute()
+
     def mark_done(self, job_id: int, result: dict[str, Any]) -> None:
         self._client.table("run_jobs").update(
             {
                 "status": "done",
                 "result": result,
                 "completed_at": _iso_now(),
+                "progress": None,
             }
         ).eq("id", job_id).execute()
 
@@ -391,6 +400,7 @@ class RunJobRepository:
                 "status": "failed",
                 "error": error,
                 "completed_at": _iso_now(),
+                "progress": None,
             }
         ).eq("id", job_id).execute()
 

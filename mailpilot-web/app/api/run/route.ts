@@ -2,6 +2,12 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { NextResponse } from "next/server";
 
+export interface RunJobProgress {
+  phase: string;
+  message: string;
+  timestamp: string;
+}
+
 export interface RunJobRow {
   id: number;
   status: "pending" | "running" | "done" | "failed";
@@ -16,6 +22,7 @@ export interface RunJobRow {
     dry_run?: boolean;
   } | null;
   error: string | null;
+  progress: RunJobProgress | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -51,7 +58,9 @@ export async function POST(request: Request) {
   const { data, error } = await sessionClient
     .from("run_jobs")
     .insert({ user_id: user.id, options })
-    .select("id, status, created_at")
+    .select(
+      "id, status, options, result, error, progress, created_at, started_at, completed_at"
+    )
     .single();
 
   if (error) {
@@ -67,9 +76,10 @@ export async function POST(request: Request) {
 
 /**
  * GET /api/run
- * Returns the most recent run_job for the authenticated user (for status polling).
+ * Returns the most recent run_job for the authenticated user, or a specific row
+ * when `?job_id=<id>` is passed (must belong to the current user).
  */
-export async function GET() {
+export async function GET(request: Request) {
   const sessionClient = await createClient();
   const {
     data: { user },
@@ -79,16 +89,30 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const url = new URL(request.url);
+  const jobIdParam = url.searchParams.get("job_id");
+  let jobId: number | null = null;
+  if (jobIdParam !== null && jobIdParam !== "") {
+    const n = Number(jobIdParam);
+    if (!Number.isSafeInteger(n) || n <= 0) {
+      return NextResponse.json({ error: "Invalid job_id" }, { status: 400 });
+    }
+    jobId = n;
+  }
+
   // Use service client so we always get the authoritative row including
   // fields written by the Python runner (which bypasses RLS).
   const svc = createServiceClient();
-  const { data, error } = await svc
+  const base = svc
     .from("run_jobs")
-    .select("id, status, options, result, error, created_at, started_at, completed_at")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .select(
+      "id, status, options, result, error, progress, created_at, started_at, completed_at"
+    )
+    .eq("user_id", user.id);
+
+  const { data, error } = jobId
+    ? await base.eq("id", jobId).maybeSingle()
+    : await base.order("created_at", { ascending: false }).limit(1).maybeSingle();
 
   if (error) {
     return NextResponse.json({ error: "Failed to fetch job status" }, { status: 500 });
