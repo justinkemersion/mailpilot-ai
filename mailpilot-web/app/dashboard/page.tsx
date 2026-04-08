@@ -1,8 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { redirect } from "next/navigation";
+import { ConnectedAccountsList } from "./ConnectedAccountsList";
 import { HistoryTable, type ProcessedEmailRow } from "./HistoryTable";
-import { RunPanel } from "./RunPanel";
+import { RunSyncControl } from "./RunSyncControl";
 import type { RunJobRow } from "@/app/api/run/route";
 
 interface ConnectedAccount {
@@ -31,10 +32,8 @@ async function getEmailHistory(userId: string): Promise<ProcessedEmailRow[]> {
       "id, gmail_message_id, account_id, accounts(email), category, subject, sender, processed_at, message_received_at, actions_taken, was_archived, applied_label_names"
     )
     .eq("user_id", userId)
-    // Newest in mailbox first when message_received_at is set (Gmail internalDate).
     .order("message_received_at", { ascending: false, nullsFirst: false })
     .order("processed_at", { ascending: false })
-    // Gmail list is newest-first; we insert in that order, so lower id = newer within the same second.
     .order("id", { ascending: true })
     .limit(50);
   return (data as unknown as ProcessedEmailRow[]) ?? [];
@@ -57,7 +56,7 @@ async function SignOutButton() {
     <form action="/auth/signout" method="post">
       <button
         type="submit"
-        className="text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+        className="min-h-11 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 sm:w-auto sm:border-0 sm:px-2 sm:py-1"
       >
         Sign out
       </button>
@@ -89,49 +88,50 @@ export default async function DashboardPage({
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      {/* Header */}
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            MailPilot
-          </h1>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-zinc-500 dark:text-zinc-400">
-              {user.email}
-            </span>
-            <SignOutButton />
+        <div className="mx-auto max-w-5xl space-y-4 px-4 py-4 sm:px-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:gap-6">
+              <h1 className="shrink-0 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                MailPilot
+              </h1>
+              <RunSyncControl initialJob={latestJob} />
+            </div>
+            <div className="flex min-w-0 flex-col gap-2 border-t border-zinc-200 pt-3 sm:shrink-0 sm:flex-row sm:items-center sm:gap-4 sm:border-0 sm:pt-0">
+              <span className="truncate text-sm text-zinc-500 dark:text-zinc-400">
+                {user.email}
+              </span>
+              <SignOutButton />
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 py-10 space-y-8">
-        {/* Flash messages */}
+      <main className="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6 sm:py-10">
         {justConnected && (
-          <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700 dark:bg-green-950 dark:border-green-800 dark:text-green-400">
+          <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400">
             Gmail account connected successfully.
           </div>
         )}
         {connectError && (
-          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600 dark:bg-red-950 dark:border-red-800 dark:text-red-400">
-            Something went wrong connecting Gmail ({connectError}). Please try
-            again.
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+            Something went wrong connecting Gmail ({connectError}). Please try again.
           </div>
         )}
 
-        {/* Connected accounts */}
         <section>
-          <div className="mb-4 flex items-center justify-between">
-            <div>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="min-w-0">
               <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
                 Connected Gmail accounts
               </h2>
               <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                MailPilot will process emails for each connected account.
+                MailPilot processes mail in the background for each connected account.
               </p>
             </div>
             <a
               href="/auth/google"
-              className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 transition-colors dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
               <svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true">
                 <path
@@ -161,45 +161,14 @@ export default async function DashboardPage({
                 No Gmail accounts connected yet.
               </p>
               <p className="mt-1 text-sm text-zinc-400 dark:text-zinc-500">
-                Click &ldquo;Connect Gmail&rdquo; to get started.
+                Tap &ldquo;Connect Gmail&rdquo; to get started.
               </p>
             </div>
           ) : (
-            <ul className="space-y-3">
-              {accounts.map((account) => (
-                <li
-                  key={account.id}
-                  className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-100 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                      {account.email[0].toUpperCase()}
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                        {account.display_name ?? account.email}
-                      </p>
-                      {account.display_name && (
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                          {account.email}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950 dark:text-green-400">
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                    Active
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <ConnectedAccountsList accounts={accounts} />
           )}
         </section>
 
-        {/* Run panel */}
-        <RunPanel initialJob={latestJob} />
-
-        {/* Email history */}
         <section>
           <div className="mb-4">
             <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">

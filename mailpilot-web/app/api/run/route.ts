@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  let options: Record<string, unknown> = {};
+  const options: Record<string, unknown> = {};
   try {
     const body = await request.json();
     const { newer_than_days, include_read, dry_run } = body;
