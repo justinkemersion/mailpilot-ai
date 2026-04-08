@@ -25,6 +25,7 @@ class InMemoryAccountRepository:
         token_json: str = "{}",
         display_name: str | None = None,
         user_id: str = _FAKE_USER_ID,
+        processing_enabled: bool = True,
     ) -> Account:
         now = datetime.now(UTC)
         aid = self._next_id
@@ -38,6 +39,7 @@ class InMemoryAccountRepository:
             active=True,
             created_at=now,
             updated_at=now,
+            processing_enabled=processing_enabled,
         )
         self._accounts[aid] = acc
         return acc
@@ -63,11 +65,12 @@ class InMemoryAccountRepository:
                 active=a.active,
                 created_at=a.created_at,
                 updated_at=datetime.now(UTC),
+                processing_enabled=a.processing_enabled,
             )
 
     def list_active(self) -> list[Account]:
         return sorted(
-            (a for a in self._accounts.values() if a.active),
+            (a for a in self._accounts.values() if a.active and a.processing_enabled),
             key=lambda x: x.email,
         )
 

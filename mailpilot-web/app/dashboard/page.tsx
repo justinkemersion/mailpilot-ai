@@ -11,17 +11,22 @@ interface ConnectedAccount {
   email: string;
   display_name: string | null;
   active: boolean;
+  processing_enabled: boolean;
 }
 
 async function getConnectedAccounts(userId: string): Promise<ConnectedAccount[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("accounts")
-    .select("id, email, display_name, active")
+    .select("id, email, display_name, active, processing_enabled")
     .eq("user_id", userId)
     .eq("active", true)
     .order("email");
-  return (data as ConnectedAccount[]) ?? [];
+  const rows = (data as ConnectedAccount[] | null) ?? [];
+  return rows.map((row) => ({
+    ...row,
+    processing_enabled: row.processing_enabled !== false,
+  }));
 }
 
 async function getEmailHistory(userId: string): Promise<ProcessedEmailRow[]> {

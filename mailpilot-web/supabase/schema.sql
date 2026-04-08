@@ -15,6 +15,7 @@ CREATE TABLE public.accounts (
     display_name  TEXT,
     token_json    TEXT         NOT NULL,
     active        BOOLEAN      NOT NULL DEFAULT TRUE,
+    processing_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     -- One Supabase user can only have one row per Gmail address.

@@ -8,14 +8,7 @@ export interface ConnectedAccountItem {
   email: string;
   display_name: string | null;
   active: boolean;
-}
-
-async function setAccountProcessingEnabled(
-  accountId: number,
-  enabled: boolean
-): Promise<void> {
-  void accountId;
-  void enabled;
+  processing_enabled: boolean;
 }
 
 async function disconnectAccount(accountId: number): Promise<void> {
@@ -29,15 +22,29 @@ export function ConnectedAccountsList({
 }) {
   const [processingById, setProcessingById] = useState<Record<number, boolean>>(
     () =>
-      Object.fromEntries(initialAccounts.map((a) => [a.id, true])) as Record<
-        number,
-        boolean
-      >
+      Object.fromEntries(
+        initialAccounts.map((a) => [a.id, a.processing_enabled])
+      ) as Record<number, boolean>
   );
 
   const toggleProcessing = useCallback(async (accountId: number, next: boolean) => {
     setProcessingById((prev) => ({ ...prev, [accountId]: next }));
-    await setAccountProcessingEnabled(accountId, next);
+    try {
+      const res = await fetch(`/api/accounts/${accountId}/processing`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processing_enabled: next }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof err?.error === "string" ? err.error : `HTTP ${res.status}`
+        );
+      }
+    } catch (e) {
+      console.error("Failed to update processing toggle:", e);
+      setProcessingById((prev) => ({ ...prev, [accountId]: !next }));
+    }
   }, []);
 
   const onDisconnect = useCallback(async (accountId: number) => {

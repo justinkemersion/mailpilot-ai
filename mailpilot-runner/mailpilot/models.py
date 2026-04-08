@@ -14,6 +14,7 @@ class Account:
     active: bool
     created_at: datetime
     updated_at: datetime
+    processing_enabled: bool = True
 
 
 @dataclass

@@ -82,6 +82,7 @@ class SupabaseAccountRepository:
             self._client.table("accounts")
             .select("*")
             .eq("active", True)
+            .eq("processing_enabled", True)
             .order("email")
             .execute()
         )
@@ -98,6 +99,7 @@ class SupabaseAccountRepository:
             active=bool(row.get("active", True)),
             created_at=_parse_dt(row.get("created_at")),
             updated_at=_parse_dt(row.get("updated_at")),
+            processing_enabled=bool(row.get("processing_enabled", True)),
         )
 
 
