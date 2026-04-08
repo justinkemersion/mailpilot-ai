@@ -1,104 +1,65 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient } from "@/lib/supabase/server";
+import { OAuth2Client } from "google-auth-library";
+import { google } from "googleapis";
 import { NextResponse } from "next/server";
 
-interface TokenJson {
-  refresh_token: string;
-  token_uri: string;
-  client_id: string;
-  client_secret: string;
+interface StoredTokenJson {
+  refresh_token?: string;
+  [key: string]: unknown;
 }
 
-interface GoogleTokenResponse {
-  access_token: string;
-  expires_in: number;
-  token_type: string;
+interface ProcessedEmailJoined {
+  id: number;
+  gmail_message_id: string;
+  account_id: number;
+  user_id: string;
+  actions_taken: string | null;
+  applied_label_names: string | null;
+  accounts:
+    | {
+        token_json: string;
+        user_id: string;
+      }
+    | {
+        token_json: string;
+        user_id: string;
+      }[];
 }
 
-/**
- * Refresh a Google OAuth access token using the stored refresh_token.
- * The token_json stored by the web app's OAuth callback matches
- * google.oauth2.credentials.Credentials.from_authorized_user_info() format.
- */
-async function refreshAccessToken(tokenJson: TokenJson): Promise<string> {
-  const res = await fetch(tokenJson.token_uri, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: tokenJson.refresh_token,
-      client_id: tokenJson.client_id,
-      client_secret: tokenJson.client_secret,
-    }),
-  });
-
-  if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`Google token refresh failed: ${detail}`);
-  }
-
-  const data = (await res.json()) as GoogleTokenResponse;
-  if (!data.access_token) {
-    throw new Error("Google token refresh returned no access_token");
-  }
-  return data.access_token;
-}
-
-/**
- * Call Gmail messages.modify to restore INBOX + UNREAD and remove applied labels.
- */
-async function gmailModify(
-  accessToken: string,
-  gmailMessageId: string,
-  removeLabels: string[]
-): Promise<void> {
-  const body: Record<string, string[]> = {
-    addLabelIds: ["INBOX", "UNREAD"],
-    removeLabelIds: removeLabels,
-  };
-
-  const res = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailMessageId}/modify`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
+function parseAppliedLabelNames(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.map(String);
     }
-  );
-
-  if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`Gmail modify failed (${res.status}): ${detail}`);
+  } catch {
+    // ignore
   }
+  return [];
 }
 
 /**
- * Resolve Gmail label names (e.g. "newsletters") to label IDs needed by the modify API.
+ * Map stored label names (and system ids) to Gmail label IDs for messages.modify.
  */
-async function resolveLabelIds(
-  accessToken: string,
+async function resolveRemoveLabelIds(
+  oauth2: OAuth2Client,
   labelNames: string[]
 ): Promise<string[]> {
   if (labelNames.length === 0) return [];
 
-  const res = await fetch(
-    "https://gmail.googleapis.com/gmail/v1/users/me/labels",
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
-  if (!res.ok) return [];
-
-  const data = (await res.json()) as { labels: { id: string; name: string }[] };
+  const gmail = google.gmail({ version: "v1", auth: oauth2 });
+  const res = await gmail.users.labels.list({ userId: "me" });
+  const labels = res.data.labels ?? [];
   const nameToId = Object.fromEntries(
-    (data.labels ?? []).map((l) => [l.name.toLowerCase(), l.id])
+    labels
+      .filter((l) => l.name && l.id)
+      .map((l) => [l.name!.toLowerCase(), l.id!])
   );
 
   const ids: string[] = [];
   for (const name of labelNames) {
-    // Some entries (e.g. "SPAM", "IMPORTANT") are system label ids, not names.
-    // If the name is already an all-caps system label, use it directly.
     if (/^[A-Z_]+$/.test(name)) {
       ids.push(name);
     } else {
@@ -113,14 +74,11 @@ async function resolveLabelIds(
  * POST /api/undo
  * Body: { processed_email_id: number }
  *
- * 1. Verify the caller is signed in (anon client + session).
- * 2. Use the service role client to fetch the row + linked account.
- * 3. Refresh the Gmail access token.
- * 4. Call Gmail messages.modify to restore INBOX/UNREAD and remove applied labels.
- * 5. Mark the row [UNDONE] in Supabase.
+ * Authenticates the user, loads processed_emails joined to accounts (refresh_token),
+ * refreshes access via google-auth-library (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET),
+ * reverts Gmail changes via googleapis messages.modify, then marks the row [UNDONE].
  */
 export async function POST(request: Request) {
-  // --- Step 1: verify the caller is signed in ---
   const sessionClient = await createClient();
   const {
     data: { user },
@@ -130,7 +88,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  // --- Parse body ---
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    console.error("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is not set");
+    return NextResponse.json(
+      { error: "Server configuration error" },
+      { status: 500 }
+    );
+  }
+
   let processed_email_id: number;
   try {
     const body = await request.json();
@@ -145,24 +112,52 @@ export async function POST(request: Request) {
     );
   }
 
-  // --- Step 2: fetch the row via service role (bypasses RLS for lookup; we already verified auth) ---
   const svc = createServiceClient();
 
-  const { data: peRows, error: peError } = await svc
+  const { data: row, error: fetchError } = await svc
     .from("processed_emails")
-    .select("id, gmail_message_id, account_id, user_id, actions_taken, was_archived, applied_label_names")
+    .select(
+      `
+      id,
+      gmail_message_id,
+      account_id,
+      user_id,
+      actions_taken,
+      applied_label_names,
+      accounts!inner (
+        token_json,
+        user_id
+      )
+    `
+    )
     .eq("id", processed_email_id)
-    .eq("user_id", user.id)  // extra safety: only allow undo of own rows
-    .limit(1);
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-  if (peError || !peRows || peRows.length === 0) {
+  if (fetchError) {
+    console.error("undo fetch:", fetchError);
+    return NextResponse.json({ error: fetchError.message }, { status: 500 });
+  }
+
+  const pe = row as ProcessedEmailJoined | null;
+  if (!pe) {
     return NextResponse.json(
       { error: "Processed email not found or not owned by current user" },
       { status: 404 }
     );
   }
 
-  const pe = peRows[0];
+  const accountRow = Array.isArray(pe.accounts) ? pe.accounts[0] : pe.accounts;
+  if (!accountRow?.token_json) {
+    return NextResponse.json(
+      { error: "Processed email not found or not owned by current user" },
+      { status: 404 }
+    );
+  }
+
+  if (accountRow.user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   if ((pe.actions_taken ?? "").includes("[UNDONE]")) {
     return NextResponse.json(
@@ -171,24 +166,9 @@ export async function POST(request: Request) {
     );
   }
 
-  // --- Fetch the linked account for token_json ---
-  const { data: accRows, error: accError } = await svc
-    .from("accounts")
-    .select("token_json")
-    .eq("id", pe.account_id)
-    .limit(1);
-
-  if (accError || !accRows || accRows.length === 0) {
-    return NextResponse.json(
-      { error: "Linked Gmail account not found" },
-      { status: 404 }
-    );
-  }
-
-  let tokenJson: TokenJson;
+  let stored: StoredTokenJson;
   try {
-    tokenJson = JSON.parse(accRows[0].token_json) as TokenJson;
-    if (!tokenJson.refresh_token || !tokenJson.token_uri) throw new Error();
+    stored = JSON.parse(accountRow.token_json) as StoredTokenJson;
   } catch {
     return NextResponse.json(
       { error: "Stored Gmail credentials are malformed" },
@@ -196,10 +176,19 @@ export async function POST(request: Request) {
     );
   }
 
-  // --- Step 3: refresh the access token ---
-  let accessToken: string;
+  const refreshToken = stored.refresh_token;
+  if (!refreshToken) {
+    return NextResponse.json(
+      { error: "No refresh token stored for this account; reconnect Gmail." },
+      { status: 400 }
+    );
+  }
+
+  const oauth2 = new OAuth2Client(clientId, clientSecret);
+  oauth2.setCredentials({ refresh_token: refreshToken });
+
   try {
-    accessToken = await refreshAccessToken(tokenJson);
+    await oauth2.getAccessToken();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
@@ -208,50 +197,45 @@ export async function POST(request: Request) {
     );
   }
 
-  // --- Step 4: resolve label names → IDs and call Gmail modify ---
-  const gmailMsgId: string = pe.gmail_message_id;
-  let appliedLabelNames: string[] = [];
-  try {
-    const raw = pe.applied_label_names;
-    if (raw) {
-      const parsed: unknown = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        appliedLabelNames = parsed.map(String);
-      }
-    }
-  } catch {
-    // ignore malformed JSON — proceed with no label removal
-  }
+  const gmail = google.gmail({ version: "v1", auth: oauth2 });
+  const appliedNames = parseAppliedLabelNames(pe.applied_label_names);
 
-  let removeIds: string[] = [];
+  let removeLabelIds: string[] = [];
   try {
-    removeIds = await resolveLabelIds(accessToken, appliedLabelNames);
+    removeLabelIds = await resolveRemoveLabelIds(oauth2, appliedNames);
   } catch {
-    // non-fatal — still restore INBOX/UNREAD even if label resolution fails
+    // still restore INBOX / UNREAD
   }
 
   try {
-    await gmailModify(accessToken, gmailMsgId, removeIds);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    await gmail.users.messages.modify({
+      userId: "me",
+      id: pe.gmail_message_id,
+      requestBody: {
+        addLabelIds: ["INBOX", "UNREAD"],
+        removeLabelIds: removeLabelIds,
+      },
+    });
+  } catch (err: unknown) {
+    const gErr = err as { message?: string; response?: { data?: unknown } };
+    const msg = gErr.message ?? JSON.stringify(gErr.response?.data ?? err);
     return NextResponse.json(
       { error: `Gmail modify failed: ${msg}` },
       { status: 502 }
     );
   }
 
-  // --- Step 5: mark [UNDONE] in Supabase ---
   const prevActions = (pe.actions_taken ?? "").trim();
   const newActions = prevActions ? `${prevActions} [UNDONE]` : "[UNDONE]";
 
   const { error: updateError } = await svc
     .from("processed_emails")
     .update({ actions_taken: newActions })
-    .eq("id", processed_email_id);
+    .eq("id", processed_email_id)
+    .eq("user_id", user.id);
 
   if (updateError) {
     console.error("Failed to mark row as undone:", updateError);
-    // Gmail was already modified — log but still report success to the user
   }
 
   return NextResponse.json({ ok: true });

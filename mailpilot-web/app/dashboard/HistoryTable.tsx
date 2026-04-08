@@ -2,7 +2,8 @@
 
 import { formatMailpilotDateUtc } from "@/lib/formatMailpilotDate";
 import { Loader2, Undo2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 export interface ProcessedEmailRow {
   id: number;
@@ -136,9 +137,21 @@ interface UndoState {
 }
 
 export function HistoryTable({ rows: initialRows }: { rows: ProcessedEmailRow[] }) {
+  const router = useRouter();
   const [rows, setRows] = useState<ProcessedEmailRow[]>(initialRows);
   const [undoState, setUndoState] = useState<UndoState>({});
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+
+  const rowsSyncKey = useMemo(
+    () =>
+      initialRows.map((r) => `${r.id}:${r.actions_taken ?? ""}`).join("|"),
+    [initialRows]
+  );
+
+  useEffect(() => {
+    setRows(initialRows);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when server-sent row content changes
+  }, [rowsSyncKey]);
 
   const categoriesInData = useMemo(() => {
     const u = [...new Set(rows.map((r) => r.category).filter(Boolean))];
@@ -173,6 +186,7 @@ export function HistoryTable({ rows: initialRows }: { rows: ProcessedEmailRow[] 
             : r
         )
       );
+      router.refresh();
     } catch (err) {
       console.error("Undo failed:", err);
       setUndoState((s) => ({ ...s, [row.id]: "error" }));
