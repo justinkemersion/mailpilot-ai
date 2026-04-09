@@ -12,12 +12,13 @@ MailPilot acts as an **invisible chief of staff** for email. Large language mode
 mailpilot-ai/
 ├── mailpilot-runner/   # Python engine (CLI, Gmail, OpenAI, Supabase persistence)
 ├── mailpilot-web/      # Next.js app (Supabase Auth, Google OAuth UX, dashboard)
+├── AGENTS.md           # Agent entrypoint (links to backlog, web rules, architecture)
 ├── BACKLOG.md          # Session-agnostic deferred work (for humans + agents)
 ├── .github/            # CI workflows
 └── LICENSE
 ```
 
-**Deferred work:** see [BACKLOG.md](BACKLOG.md).
+**Deferred work:** see [BACKLOG.md](BACKLOG.md). **Agent entrypoint:** [AGENTS.md](AGENTS.md).
 
 ### `mailpilot-web` — control plane
 
