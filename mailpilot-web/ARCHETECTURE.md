@@ -65,6 +65,6 @@ We use a monorepo to separate concerns. **CRITICAL RULE FOR AI:** Never mix the 
 
 Connected-account cards use **`router.refresh()`** after successful PATCH/DELETE so the account list stays in sync with the server.
 
-## 5. Repo backlog
+## 5. Repo backlog and agent entrypoint
 
-Session-agnostic deferred work (so it is easy to find in any Cursor session or clone) lives in the monorepo root: [BACKLOG.md](../BACKLOG.md).
+Session-agnostic deferred work lives in the monorepo root: [BACKLOG.md](../BACKLOG.md). The root [AGENTS.md](../AGENTS.md) file points there, to this document, and to [mailpilot-web/AGENTS.md](AGENTS.md) for Next.js-specific rules.
