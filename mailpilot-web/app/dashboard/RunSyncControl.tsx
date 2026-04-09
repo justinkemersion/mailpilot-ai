@@ -6,6 +6,7 @@ import type {
 } from "@/app/api/run/route";
 import { createClient } from "@/lib/supabase/client";
 import { Loader2, RefreshCw, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 type JobStatus = RunJobRow["status"] | "idle";
@@ -172,12 +173,16 @@ interface Props {
 }
 
 export function RunSyncControl({ initialJob, variant = "default" }: Props) {
+  const router = useRouter();
   const [job, setJob] = useState<RunJobRow | null>(initialJob);
   const [options, setOptions] = useState<RunOptions>(DEFAULT_OPTIONS);
   const [submitting, setSubmitting] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
   const [activityLog, setActivityLog] = useState<RunJobProgress[]>([]);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const prevJobRef = useRef<{ id: number; status: RunJobRow["status"] } | null>(
+    null
+  );
 
   const activeJobId =
     job?.status === "pending" || job?.status === "running" ? job.id : null;
@@ -191,6 +196,21 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
       return [...prev, p].slice(-25);
     });
   }, [progressEntry]);
+
+  useEffect(() => {
+    if (!job) {
+      prevJobRef.current = null;
+      return;
+    }
+    const prev = prevJobRef.current;
+    if (prev && prev.id === job.id) {
+      const wasActive = prev.status === "pending" || prev.status === "running";
+      if (wasActive && job.status === "done") {
+        router.refresh();
+      }
+    }
+    prevJobRef.current = { id: job.id, status: job.status };
+  }, [job, router]);
 
   useEffect(() => {
     if (activeJobId == null) return;

@@ -64,3 +64,7 @@ We use a monorepo to separate concerns. **CRITICAL RULE FOR AI:** Never mix the 
 **Undo and `run_jobs`:** Undo is **not** a queued worker job today; it is **only** `POST /api/undo` (session-scoped). If a future `job_type` (e.g. `undo`) is added to `run_jobs`, the worker handler must enforce `processed_emails.user_id == job.user_id` before calling Gmail.
 
 Connected-account cards use **`router.refresh()`** after successful PATCH/DELETE so the account list stays in sync with the server.
+
+## 5. Repo backlog
+
+Session-agnostic deferred work (so it is easy to find in any Cursor session or clone) lives in the monorepo root: [BACKLOG.md](../BACKLOG.md).
