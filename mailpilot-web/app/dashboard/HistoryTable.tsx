@@ -136,6 +136,53 @@ interface UndoState {
   [id: number]: "idle" | "pending" | "done" | "error";
 }
 
+function categoryBadgeClass(category: string): string {
+  return (
+    CATEGORY_COLORS[category] ??
+    "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+  );
+}
+
+function UndoControl({
+  row,
+  state,
+  onUndo,
+}: {
+  row: ProcessedEmailRow;
+  state: "idle" | "pending" | "done" | "error";
+  onUndo: (row: ProcessedEmailRow) => void;
+}) {
+  const undone = isUndone(row.actions_taken);
+  const undoable = canUndo(row);
+
+  if (undoable && !undone) {
+    return (
+      <button
+        type="button"
+        onClick={() => void onUndo(row)}
+        disabled={state === "pending"}
+        aria-label="Undo Gmail changes for this message"
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-600 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+      >
+        {state === "pending" ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+        ) : (
+          <Undo2 className="h-4 w-4" aria-hidden />
+        )}
+      </button>
+    );
+  }
+  if (state === "error") {
+    return <span className="text-xs text-red-500">Failed</span>;
+  }
+  if (undone) {
+    return (
+      <span className="text-xs text-zinc-400 dark:text-zinc-500">Undone</span>
+    );
+  }
+  return null;
+}
+
 export function HistoryTable({ rows: initialRows }: { rows: ProcessedEmailRow[] }) {
   const router = useRouter();
   const [rows, setRows] = useState<ProcessedEmailRow[]>(initialRows);
@@ -207,7 +254,7 @@ export function HistoryTable({ rows: initialRows }: { rows: ProcessedEmailRow[] 
   }
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
       <div className="border-b border-zinc-200 px-3 py-3 dark:border-zinc-800 sm:px-4">
         <p className="mb-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
           Filter by category
@@ -241,7 +288,93 @@ export function HistoryTable({ rows: initialRows }: { rows: ProcessedEmailRow[] 
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800 lg:hidden">
+        {displayRows.map((row) => {
+          const state = undoState[row.id] ?? "idle";
+          const undone = isUndone(row.actions_taken);
+          const acctEmail = row.accounts?.email ?? "";
+          const { displayName, address } = parseSender(row.sender);
+          const receivedAt = formatMailpilotDateUtc(
+            row.message_received_at ?? row.processed_at
+          );
+          const actionsText = (row.actions_taken ?? "").trim();
+
+          return (
+            <article
+              key={row.id}
+              className={`px-3 py-3 sm:px-4 ${
+                undone ? "opacity-50" : ""
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${accountAvatarClass(acctEmail)}`}
+                  title={acctEmail || undefined}
+                >
+                  {accountInitial(acctEmail)}
+                </div>
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <div className="flex items-start gap-2">
+                    <p
+                      className="min-w-0 flex-1 truncate font-semibold text-zinc-900 dark:text-zinc-50"
+                      title={row.sender ?? ""}
+                    >
+                      {displayName}
+                    </p>
+                    <UndoControl row={row} state={state} onUndo={handleUndo} />
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${categoryBadgeClass(row.category)}`}
+                    >
+                      {row.category}
+                    </span>
+                  </div>
+                  {row.subject ? (
+                    <p
+                      className="mt-1 line-clamp-2 break-words text-sm text-zinc-800 dark:text-zinc-100"
+                      title={row.subject}
+                    >
+                      {row.subject}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-sm italic text-zinc-400 dark:text-zinc-500">
+                      (no subject)
+                    </p>
+                  )}
+                  {address && address !== displayName ? (
+                    <p
+                      className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400"
+                      title={address}
+                    >
+                      {address}
+                    </p>
+                  ) : null}
+                  <div className="mt-2 space-y-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                    <time
+                      dateTime={row.message_received_at ?? row.processed_at}
+                      title={
+                        row.message_received_at
+                          ? `Processed ${formatMailpilotDateUtc(row.processed_at)}`
+                          : undefined
+                      }
+                    >
+                      {receivedAt}
+                    </time>
+                    {actionsText ? (
+                      <p className="line-clamp-2 break-words" title={actionsText}>
+                        {actionsText}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="hidden min-w-0 max-w-full overflow-x-auto lg:block">
         <table className="w-full min-w-[44rem] text-sm">
           <thead>
             <tr className="border-b border-zinc-200 dark:border-zinc-800">
@@ -272,10 +405,6 @@ export function HistoryTable({ rows: initialRows }: { rows: ProcessedEmailRow[] 
             {displayRows.map((row) => {
               const state = undoState[row.id] ?? "idle";
               const undone = isUndone(row.actions_taken);
-              const undoable = canUndo(row);
-              const categoryColor =
-                CATEGORY_COLORS[row.category] ??
-                "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300";
               const acctEmail = row.accounts?.email ?? "";
               const { displayName, address } = parseSender(row.sender);
 
@@ -331,7 +460,7 @@ export function HistoryTable({ rows: initialRows }: { rows: ProcessedEmailRow[] 
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 sm:px-4">
                     <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${categoryColor}`}
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${categoryBadgeClass(row.category)}`}
                     >
                       {row.category}
                     </span>
@@ -342,29 +471,7 @@ export function HistoryTable({ rows: initialRows }: { rows: ProcessedEmailRow[] 
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 sm:px-4">
-                    {undoable && !undone && (
-                      <button
-                        type="button"
-                        onClick={() => void handleUndo(row)}
-                        disabled={state === "pending"}
-                        aria-label="Undo Gmail changes for this message"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-600 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                      >
-                        {state === "pending" ? (
-                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                        ) : (
-                          <Undo2 className="h-4 w-4" aria-hidden />
-                        )}
-                      </button>
-                    )}
-                    {state === "error" && (
-                      <span className="text-xs text-red-500">Failed</span>
-                    )}
-                    {undone && (
-                      <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                        Undone
-                      </span>
-                    )}
+                    <UndoControl row={row} state={state} onUndo={handleUndo} />
                   </td>
                 </tr>
               );

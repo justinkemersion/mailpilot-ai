@@ -1,12 +1,20 @@
 import type { NextAuthOptions } from "next-auth";
 import GitHubProvider from "next-auth/providers/github";
 import GoogleProvider from "next-auth/providers/google";
+import { ensureAuthUrlForRuntime } from "./env";
+
+ensureAuthUrlForRuntime();
 
 function optionalEnv(name: string): string {
   return process.env[name]?.trim() ?? "";
 }
 
 export const authOptions: NextAuthOptions = {
+  secret: optionalEnv("AUTH_SECRET") || optionalEnv("NEXTAUTH_SECRET"),
+  trustHost: optionalEnv("AUTH_TRUST_HOST") === "true",
+  pages: {
+    signIn: "/login",
+  },
   session: {
     strategy: "jwt",
   },
