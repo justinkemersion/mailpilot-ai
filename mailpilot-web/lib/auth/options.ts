@@ -11,7 +11,6 @@ function optionalEnv(name: string): string {
 
 export const authOptions: NextAuthOptions = {
   secret: optionalEnv("AUTH_SECRET") || optionalEnv("NEXTAUTH_SECRET"),
-  trustHost: optionalEnv("AUTH_TRUST_HOST") === "true",
   pages: {
     signIn: "/login",
   },
