@@ -27,6 +27,15 @@ def render_config_error(exc: RuntimeError) -> bool:
         _render_openai_api_key_error()
         return True
 
+    if (
+        "MAILPILOT_CLOUDFLARE_API_TOKEN" in message
+        or "MAILPILOT_CLOUDFLARE_ACCOUNT_ID" in message
+        or "CLOUDFLARE_API_TOKEN" in message
+        or "CLOUDFLARE_ACCOUNT_ID" in message
+    ):
+        _render_cloudflare_credentials_error()
+        return True
+
     if "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY" in message:
         _render_supabase_credentials_error()
         return True
@@ -48,6 +57,20 @@ def _render_openai_api_key_error() -> None:
         "  3. Save the file and re-run the command.\n"
     )
     _panel("Missing OpenAI API key", body)
+
+
+def _render_cloudflare_credentials_error() -> None:
+    body = (
+        "MailPilot could not start because Cloudflare Workers AI credentials are missing.\n\n"
+        "Set in mailpilot-runner/.env (or /etc/mailpilot/runner.env on the server):\n"
+        "  MAILPILOT_AI_PROVIDER=cloudflare\n"
+        "  MAILPILOT_CLOUDFLARE_ACCOUNT_ID=<your-account-id>\n"
+        "  MAILPILOT_CLOUDFLARE_API_TOKEN=<api-token-with-workers-ai-read>\n"
+        "  MAILPILOT_CLOUDFLARE_MODEL=@cf/meta/llama-3.1-8b-instruct-fast\n\n"
+        "Create the token in the Cloudflare dashboard (Workers AI Read).\n"
+        "Free-tier Workers AI includes daily Neuron limits for small models like Llama 8B.\n"
+    )
+    _panel("Missing Cloudflare Workers AI configuration", body)
 
 
 def _render_supabase_credentials_error() -> None:

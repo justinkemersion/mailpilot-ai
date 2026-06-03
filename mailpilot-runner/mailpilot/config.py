@@ -65,11 +65,30 @@ def get_ai_provider() -> str:
     Return the configured AI provider.
 
     Controlled by MAILPILOT_AI_PROVIDER (default: openai).
-    Reserved for future provider routing; valid values today are documented
-    but the runner still uses the OpenAI-backed classifier.
+    Supported values: ``openai``, ``cloudflare``.
     """
     _load_dotenv()
     return (os.getenv("MAILPILOT_AI_PROVIDER") or "openai").strip().lower()
+
+
+def cloudflare_configured() -> bool:
+    """True when Cloudflare Workers AI credentials are present."""
+    _load_dotenv()
+    token = (
+        os.getenv("MAILPILOT_CLOUDFLARE_API_TOKEN")
+        or os.getenv("CLOUDFLARE_API_TOKEN")
+        or ""
+    ).strip()
+    if not token:
+        return False
+    if (os.getenv("MAILPILOT_CLOUDFLARE_BASE_URL") or "").strip():
+        return True
+    account_id = (
+        os.getenv("MAILPILOT_CLOUDFLARE_ACCOUNT_ID")
+        or os.getenv("CLOUDFLARE_ACCOUNT_ID")
+        or ""
+    ).strip()
+    return bool(account_id)
 
 
 def get_openai_api_key() -> str:
@@ -87,27 +106,59 @@ def get_openai_api_key() -> str:
 
 def get_cloudflare_base_url() -> str:
     """
-    Return the base URL for a future Cloudflare-backed classification endpoint.
+    Optional override for the full Workers AI run URL (custom Worker proxy).
 
+    When unset, the runner calls the Cloudflare REST API using account id + model.
     Controlled by MAILPILOT_CLOUDFLARE_BASE_URL.
     """
     _load_dotenv()
     return (os.getenv("MAILPILOT_CLOUDFLARE_BASE_URL") or "").strip()
 
 
-def get_cloudflare_api_token() -> str:
+def get_cloudflare_account_id() -> str:
     """
-    Return the API token for a future Cloudflare-backed classification endpoint.
+    Cloudflare account id for Workers AI REST calls.
 
-    Controlled by MAILPILOT_CLOUDFLARE_API_TOKEN.
+    Controlled by MAILPILOT_CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_ACCOUNT_ID.
+    Not required when MAILPILOT_CLOUDFLARE_BASE_URL is set.
     """
     _load_dotenv()
-    return (os.getenv("MAILPILOT_CLOUDFLARE_API_TOKEN") or "").strip()
+    value = (
+        os.getenv("MAILPILOT_CLOUDFLARE_ACCOUNT_ID")
+        or os.getenv("CLOUDFLARE_ACCOUNT_ID")
+        or ""
+    ).strip()
+    if value:
+        return value
+    raise RuntimeError(
+        "MAILPILOT_CLOUDFLARE_ACCOUNT_ID (or CLOUDFLARE_ACCOUNT_ID) is required "
+        "when MAILPILOT_AI_PROVIDER=cloudflare and MAILPILOT_CLOUDFLARE_BASE_URL is not set"
+    )
+
+
+def get_cloudflare_api_token() -> str:
+    """
+    Return the Cloudflare API token (Workers AI read permission).
+
+    Controlled by MAILPILOT_CLOUDFLARE_API_TOKEN or CLOUDFLARE_API_TOKEN.
+    """
+    _load_dotenv()
+    value = (
+        os.getenv("MAILPILOT_CLOUDFLARE_API_TOKEN")
+        or os.getenv("CLOUDFLARE_API_TOKEN")
+        or ""
+    ).strip()
+    if value:
+        return value
+    raise RuntimeError(
+        "MAILPILOT_CLOUDFLARE_API_TOKEN (or CLOUDFLARE_API_TOKEN) is required "
+        "when MAILPILOT_AI_PROVIDER=cloudflare"
+    )
 
 
 def get_cloudflare_model_name() -> str:
     """
-    Return the Cloudflare small-model name to use when that provider is wired in.
+    Return the Cloudflare Workers AI model id.
 
     Controlled by MAILPILOT_CLOUDFLARE_MODEL
     (default: @cf/meta/llama-3.1-8b-instruct-fast).
@@ -116,6 +167,35 @@ def get_cloudflare_model_name() -> str:
     return os.getenv(
         "MAILPILOT_CLOUDFLARE_MODEL",
         "@cf/meta/llama-3.1-8b-instruct-fast",
+    )
+
+
+def get_cloudflare_run_url() -> str:
+    """
+    Return the URL used for a single Workers AI classification request.
+    """
+    base = get_cloudflare_base_url()
+    if base:
+        return base.rstrip("/")
+    account_id = get_cloudflare_account_id()
+    model = get_cloudflare_model_name()
+    return (
+        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
+    )
+
+
+def validate_classifier_config() -> None:
+    """Ensure env vars for the configured AI provider are present."""
+    provider = get_ai_provider()
+    if provider == "openai":
+        get_openai_api_key()
+        return
+    if provider == "cloudflare":
+        get_cloudflare_api_token()
+        get_cloudflare_run_url()
+        return
+    raise RuntimeError(
+        f"Unknown MAILPILOT_AI_PROVIDER={provider!r}; use 'openai' or 'cloudflare'"
     )
 
 
@@ -368,7 +448,9 @@ def load_config() -> MailPilotConfig:
     """
     _load_dotenv()
 
-    openai_api_key = get_openai_api_key()
+    validate_classifier_config()
+    provider = get_ai_provider()
+    openai_api_key = get_openai_api_key() if provider == "openai" else ""
 
     if flux_configured():
         supabase_url, supabase_service_role_key = "", ""

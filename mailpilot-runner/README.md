@@ -137,22 +137,23 @@ Every subcommand below works with both prefixes.
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `OPENAI_API_KEY` | Yes for `run`, `run-once`, `watch-jobs`, and most commands | — | OpenAI API key for classification. |
-| `SUPABASE_URL` | Yes | — | Supabase project URL (same as web app’s project). |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes | — | Service role key (**trusted machines only**; bypasses RLS). |
-| `MAILPILOT_POLL_INTERVAL_SECONDS` | No | `300` | Default seconds between loops for `run` (overridden by `--interval`). |
-| `MAILPILOT_LOG_LEVEL` | No | `INFO` | Logging level (`DEBUG`, `INFO`, …). |
-| `MAILPILOT_AI_PROVIDER` | No | `openai` | Provider slot for future routing. Today the runner still uses the OpenAI-backed classifier. |
-| `MAILPILOT_OPENAI_MODEL` | No | `gpt-4.1-mini` | Model name for the classifier. |
+| `OPENAI_API_KEY` | When `MAILPILOT_AI_PROVIDER=openai` | — | OpenAI API key for classification. |
+| `MAILPILOT_AI_PROVIDER` | No | `openai` | `openai` or `cloudflare` (Workers AI). |
+| `MAILPILOT_OPENAI_MODEL` | No | `gpt-4.1-mini` | OpenAI model name. |
+| `MAILPILOT_CLOUDFLARE_ACCOUNT_ID` | When provider is `cloudflare` | — | Cloudflare account id (or set `MAILPILOT_CLOUDFLARE_BASE_URL`). |
+| `MAILPILOT_CLOUDFLARE_API_TOKEN` | When provider is `cloudflare` | — | API token with Workers AI Read. Alias: `CLOUDFLARE_API_TOKEN`. |
+| `MAILPILOT_CLOUDFLARE_MODEL` | No | `@cf/meta/llama-3.1-8b-instruct-fast` | Workers AI model id (Llama 3.1 8B fast is free-tier friendly). |
+| `MAILPILOT_CLOUDFLARE_BASE_URL` | No | empty | Optional full run URL override (custom Worker proxy). |
 | `MAILPILOT_AI_MAX_SUBJECT_CHARS` | No | `200` | Max subject characters included in each AI request. Lower values save tokens. |
 | `MAILPILOT_AI_MAX_SNIPPET_CHARS` | No | `600` | Max snippet characters included in each AI request. Lower values save tokens. |
 | `MAILPILOT_AI_MAX_BODY_CHARS` | No | `2000` | Max body characters included in each AI request. Set to `0` for the cheapest, body-free path. |
-| `MAILPILOT_CLASSIFICATION_DELAY_MS` | No | `250` | Minimum spacing between OpenAI classification requests. |
-| `MAILPILOT_OPENAI_MAX_RETRIES` | No | `4` | MailPilot-owned retry count for OpenAI 429 responses. |
-| `MAILPILOT_OPENAI_RETRY_BASE_MS` | No | `750` | Base exponential backoff for OpenAI 429 retries. |
-| `MAILPILOT_CLOUDFLARE_BASE_URL` | No | empty | Future Cloudflare classification endpoint (for example a Worker on your own domain). Not active yet. |
-| `MAILPILOT_CLOUDFLARE_API_TOKEN` | No | empty | Future Cloudflare auth token. Not active yet. |
-| `MAILPILOT_CLOUDFLARE_MODEL` | No | `@cf/meta/llama-3.1-8b-instruct-fast` | Future Cloudflare small-model name. Not active yet. |
+| `MAILPILOT_CLASSIFICATION_DELAY_MS` | No | `250` | Minimum spacing between classification requests. |
+| `MAILPILOT_OPENAI_MAX_RETRIES` | No | `4` | MailPilot-owned retry count for provider 429 responses. |
+| `MAILPILOT_OPENAI_RETRY_BASE_MS` | No | `750` | Base exponential backoff for 429 retries. |
+| `SUPABASE_URL` | Yes (legacy) | — | Supabase project URL when not using Flux. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes (legacy) | — | Service role key (**trusted machines only**; bypasses RLS). |
+| `MAILPILOT_POLL_INTERVAL_SECONDS` | No | `300` | Default seconds between loops for `run` (overridden by `--interval`). |
+| `MAILPILOT_LOG_LEVEL` | No | `INFO` | Logging level (`DEBUG`, `INFO`, …). |
 | `MAILPILOT_MAX_CLASSIFICATIONS_PER_RUN` | No | `50` | Maximum LLM classifications allowed in one run. |
 | `MAILPILOT_MAX_CLASSIFICATIONS_PER_ACCOUNT` | No | `25` | Maximum LLM classifications per account in one run. |
 | `MAILPILOT_DRY_RUN_MAX_CLASSIFICATIONS` | No | `10` | Maximum LLM classifications during `--dry-run`. |
@@ -215,16 +216,34 @@ OAuth **client IDs** (Web application type), redirect URIs, and the `gmail.modif
 
 1. Create an OpenAI account if you do not have one.
 2. Generate an API key from the OpenAI dashboard.
-3. Set `OPENAI_API_KEY` in `.env`.
+3. Set `MAILPILOT_AI_PROVIDER=openai` and `OPENAI_API_KEY` in `.env`.
 4. Optionally set `MAILPILOT_OPENAI_MODEL` in `.env` (see table above).
 5. If you want cheaper classifications, lower `MAILPILOT_AI_MAX_BODY_CHARS` first. For very frugal runs, try `MAILPILOT_AI_MAX_BODY_CHARS=0` and rely on sender + subject + snippet only.
+
+### Cloudflare Workers AI Setup (Llama 8B)
+
+Use Cloudflare’s free-tier Workers AI instead of OpenAI:
+
+1. In the [Cloudflare dashboard](https://dash.cloudflare.com/), copy your **Account ID**.
+2. Create an API token with **Workers AI Read** permission.
+3. Set in `.env` (or `/etc/mailpilot/runner.env` on the server):
+
+```bash
+MAILPILOT_AI_PROVIDER=cloudflare
+MAILPILOT_CLOUDFLARE_ACCOUNT_ID=your-account-id
+MAILPILOT_CLOUDFLARE_API_TOKEN=your-api-token
+MAILPILOT_CLOUDFLARE_MODEL=@cf/meta/llama-3.1-8b-instruct-fast
+```
+
+4. Restart the runner (`sudo systemctl restart mailpilot-runner` on production).
+5. Use the **extra-frugal** char limits below — 8B models do well with subject + snippet only.
+
+The classifier uses Cloudflare **JSON mode** when supported, and falls back to plain text parsing (including markdown fences) if JSON mode fails.
 
 ### Frugal presets
 
 - **Balanced OpenAI mini:** `MAILPILOT_AI_MAX_SUBJECT_CHARS=200`, `MAILPILOT_AI_MAX_SNIPPET_CHARS=600`, `MAILPILOT_AI_MAX_BODY_CHARS=2000`
-- **Extra-frugal / small 8B style:** `MAILPILOT_AI_MAX_SUBJECT_CHARS=120`, `MAILPILOT_AI_MAX_SNIPPET_CHARS=240`, `MAILPILOT_AI_MAX_BODY_CHARS=0`
-
-The Cloudflare variables are included now so you have a stable place to keep them, but the runner still uses the OpenAI-backed classifier today. When Cloudflare provider routing is added later, you will not need to rename those env vars.
+- **Extra-frugal / Cloudflare 8B:** `MAILPILOT_AI_MAX_SUBJECT_CHARS=120`, `MAILPILOT_AI_MAX_SNIPPET_CHARS=240`, `MAILPILOT_AI_MAX_BODY_CHARS=0`
 
 ### CLI reference
 

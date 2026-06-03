@@ -12,7 +12,7 @@ from .ai_classifier import (
     ClassificationError,
     ClassifiedEmail,
     Classifier,
-    OpenAIClassifier,
+    create_classifier,
 )
 from .config import (
     get_archive_receipts,
@@ -183,7 +183,7 @@ class EmailProcessor:
     ) -> None:
         base_client = gmail_client or GmailClient()
         self._gmail_client = SafeGmailClient(base_client)
-        self._classifier = classifier or OpenAIClassifier()
+        self._classifier = classifier or create_classifier()
         self._max_archives_per_run = (
             max_archives_per_run if max_archives_per_run is not None else get_max_archives_per_run()
         )
