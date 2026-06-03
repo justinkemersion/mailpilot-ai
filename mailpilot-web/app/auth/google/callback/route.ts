@@ -1,4 +1,5 @@
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/session";
+import { fluxJson } from "@/lib/flux/client";
 import { NextResponse } from "next/server";
 
 interface GoogleTokenResponse {
@@ -19,7 +20,7 @@ interface GoogleUserInfo {
  *
  * 1. Exchanges the authorization `code` for tokens (access + refresh).
  * 2. Calls Google's userinfo endpoint to get the Gmail address and display name.
- * 3. Upserts a row in public.accounts so the Python runner can pick it up.
+ * 3. Upserts a row in api.accounts so the Python runner can pick it up.
  *
  * token_json is stored as a JSON string matching the format expected by
  * google.oauth2.credentials.Credentials.from_authorized_user_info() in Phase 3:
@@ -101,15 +102,9 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${appUrl}/dashboard?error=google_userinfo`);
   }
 
-  // --- Step 3: upsert into public.accounts ---
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
+  // --- Step 3: upsert into api.accounts ---
+  const user = await getCurrentUser();
+  if (!user) {
     return NextResponse.redirect(`${appUrl}/login`);
   }
 
@@ -121,20 +116,23 @@ export async function GET(request: Request) {
     client_secret: clientSecret,
   });
 
-  const { error: upsertError } = await supabase.from("accounts").upsert(
-    {
-      user_id: user.id,
-      email: userInfo.email,
-      display_name: userInfo.name ?? null,
-      token_json: tokenJson,
-      active: true,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id,email" }
-  );
-
-  if (upsertError) {
-    console.error("Supabase accounts upsert error:", upsertError);
+  try {
+    await fluxJson("/accounts?on_conflict=user_id,email", {
+      method: "POST",
+      headers: {
+        Prefer: "resolution=merge-duplicates,return=representation",
+      },
+      json: {
+        user_id: user.id,
+        email: userInfo.email,
+        display_name: userInfo.name ?? null,
+        token_json: tokenJson,
+        active: true,
+        updated_at: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error("Flux accounts upsert error:", err);
     return NextResponse.redirect(
       `${appUrl}/dashboard?error=accounts_upsert`
     );

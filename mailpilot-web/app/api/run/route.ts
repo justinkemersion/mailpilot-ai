@@ -1,6 +1,9 @@
-import { createClient } from "@/lib/supabase/server";
-import { createServiceClient } from "@/lib/supabase/service";
+import { getCurrentUser } from "@/lib/auth/session";
+import { fluxFetch, fluxJson, postgrestParams } from "@/lib/flux/client";
 import { NextResponse } from "next/server";
+
+const RUN_JOB_SELECT =
+  "id,status,options,result,error,progress,created_at,started_at,completed_at";
 
 export interface RunJobProgress {
   phase: string;
@@ -20,6 +23,10 @@ export interface RunJobRow {
     archived?: number;
     spam_marked?: number;
     dry_run?: boolean;
+    llm_calls?: number;
+    prefiltered?: number;
+    skipped_by_budget?: number;
+    skipped_by_claim_conflict?: number;
   } | null;
   error: string | null;
   progress: RunJobProgress | null;
@@ -28,17 +35,34 @@ export interface RunJobRow {
   completed_at: string | null;
 }
 
+async function getActiveJob(userId: string): Promise<RunJobRow | null> {
+  const rows = await fluxJson<RunJobRow[]>(
+    `/run_jobs${postgrestParams([
+      ["select", RUN_JOB_SELECT],
+      ["user_id", `eq.${userId}`],
+      ["status", "in.(pending,running)"],
+      ["order", "created_at.desc"],
+      ["limit", 1],
+    ])}`
+  );
+  return rows[0] ?? null;
+}
+
+function isUniqueViolation(status: number, detail: string): boolean {
+  return (
+    status === 409 ||
+    detail.includes("run_jobs_one_active_per_user_idx") ||
+    detail.includes("duplicate key value")
+  );
+}
+
 /**
  * POST /api/run
  * Body: { newer_than_days?: number; include_read?: boolean; dry_run?: boolean }
  * Creates a pending run_job for the authenticated user.
  */
 export async function POST(request: Request) {
-  const sessionClient = await createClient();
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser();
-
+  const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
@@ -51,40 +75,54 @@ export async function POST(request: Request) {
     if (include_read !== undefined) options.include_read = Boolean(include_read);
     if (dry_run !== undefined) options.dry_run = Boolean(dry_run);
   } catch {
-    // Empty body is fine — default options
+    // Empty body is fine.
   }
 
-  // Use anon client so the RLS insert policy fires (auth.uid() = user_id)
-  const { data, error } = await sessionClient
-    .from("run_jobs")
-    .insert({ user_id: user.id, options })
-    .select(
-      "id, status, options, result, error, progress, created_at, started_at, completed_at"
-    )
-    .single();
+  try {
+    const activeJob = await getActiveJob(user.id);
+    if (activeJob) {
+      return NextResponse.json(activeJob, { status: 200 });
+    }
+  } catch (err) {
+    console.error("Failed to look up active run_job:", err);
+    return NextResponse.json({ error: "Failed to queue run job" }, { status: 500 });
+  }
 
-  if (error) {
-    console.error("Failed to create run_job:", error);
+  const res = await fluxFetch(`/run_jobs?select=${encodeURIComponent(RUN_JOB_SELECT)}`, {
+    method: "POST",
+    json: { user_id: user.id, options },
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    if (isUniqueViolation(res.status, detail)) {
+      try {
+        const existingJob = await getActiveJob(user.id);
+        if (existingJob) {
+          return NextResponse.json(existingJob, { status: 200 });
+        }
+      } catch (err) {
+        console.error("Failed to fetch existing active run_job:", err);
+      }
+    }
+    console.error("Failed to create run_job:", detail);
     return NextResponse.json(
       { error: "Failed to queue run job" },
       { status: 500 }
     );
   }
 
-  return NextResponse.json(data, { status: 201 });
+  const rows = (await res.json()) as RunJobRow[];
+  return NextResponse.json(rows[0] ?? null, { status: 201 });
 }
 
 /**
  * GET /api/run
  * Returns the most recent run_job for the authenticated user, or a specific row
- * when `?job_id=<id>` is passed (must belong to the current user).
+ * when `?job_id=<id>` is passed.
  */
 export async function GET(request: Request) {
-  const sessionClient = await createClient();
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser();
-
+  const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
@@ -100,23 +138,19 @@ export async function GET(request: Request) {
     jobId = n;
   }
 
-  // Use service client so we always get the authoritative row including
-  // fields written by the Python runner (which bypasses RLS).
-  const svc = createServiceClient();
-  const base = svc
-    .from("run_jobs")
-    .select(
-      "id, status, options, result, error, progress, created_at, started_at, completed_at"
-    )
-    .eq("user_id", user.id);
-
-  const { data, error } = jobId
-    ? await base.eq("id", jobId).maybeSingle()
-    : await base.order("created_at", { ascending: false }).limit(1).maybeSingle();
-
-  if (error) {
+  try {
+    const rows = await fluxJson<RunJobRow[]>(
+      `/run_jobs${postgrestParams([
+        ["select", RUN_JOB_SELECT],
+        ["user_id", `eq.${user.id}`],
+        ...(jobId ? ([["id", `eq.${jobId}`]] as Array<[string, string]>) : []),
+        ["order", "created_at.desc"],
+        ["limit", 1],
+      ])}`
+    );
+    return NextResponse.json(rows[0] ?? null);
+  } catch (err) {
+    console.error("Failed to fetch job status:", err);
     return NextResponse.json({ error: "Failed to fetch job status" }, { status: 500 });
   }
-
-  return NextResponse.json(data ?? null);
 }

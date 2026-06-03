@@ -1,4 +1,5 @@
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/session";
+import { fluxJson, postgrestParams } from "@/lib/flux/client";
 import { NextResponse } from "next/server";
 
 export interface AccountPublicRow {
@@ -52,34 +53,39 @@ export async function PATCH(
 
   const processing_enabled = (body as { processing_enabled: boolean }).processing_enabled;
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
   const updatedAt = new Date().toISOString();
-  const { data, error } = await supabase
-    .from("accounts")
-    .update({ processing_enabled, updated_at: updatedAt })
-    .eq("id", accountId)
-    .eq("user_id", user.id)
-    .select("id, email, display_name, active, processing_enabled, created_at, updated_at")
-    .maybeSingle();
-
-  if (error) {
-    console.error("accounts PATCH:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  let data: AccountPublicRow[];
+  try {
+    data = await fluxJson<AccountPublicRow[]>(
+      `/accounts${postgrestParams([
+        [
+          "select",
+          "id,email,display_name,active,processing_enabled,created_at,updated_at",
+        ],
+        ["id", `eq.${accountId}`],
+        ["user_id", `eq.${user.id}`],
+      ])}`,
+      {
+        method: "PATCH",
+        json: { processing_enabled, updated_at: updatedAt },
+      }
+    );
+  } catch (err) {
+    console.error("accounts PATCH:", err);
+    return NextResponse.json({ error: "Could not update account" }, { status: 500 });
   }
 
-  if (!data) {
+  const account = data[0];
+  if (!account) {
     return NextResponse.json({ error: "Account not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ account: data as AccountPublicRow });
+  return NextResponse.json({ account });
 }
 
 /**
@@ -96,31 +102,30 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid account id" }, { status: 400 });
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const { data, error } = await supabase
-    .from("accounts")
-    .delete()
-    .eq("id", accountId)
-    .eq("user_id", user.id)
-    .select("id")
-    .maybeSingle();
-
-  if (error) {
-    console.error("accounts DELETE:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  let data: Array<{ id: number }>;
+  try {
+    data = await fluxJson<Array<{ id: number }>>(
+      `/accounts${postgrestParams([
+        ["select", "id"],
+        ["id", `eq.${accountId}`],
+        ["user_id", `eq.${user.id}`],
+      ])}`,
+      { method: "DELETE" }
+    );
+  } catch (err) {
+    console.error("accounts DELETE:", err);
+    return NextResponse.json({ error: "Could not disconnect account" }, { status: 500 });
   }
 
-  if (!data) {
+  const deleted = data[0];
+  if (!deleted) {
     return NextResponse.json({ error: "Account not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ ok: true as const, id: data.id });
+  return NextResponse.json({ ok: true as const, id: deleted.id });
 }

@@ -1,0 +1,46 @@
+services:
+  web:
+    build:
+      context: ./mailpilot-web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+        NEXT_PUBLIC_FLUX_URL: ${NEXT_PUBLIC_FLUX_URL}
+        NEXTAUTH_URL: ${NEXTAUTH_URL}
+    container_name: mailpilot-web
+    env_file:
+      - .env.docker
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mailpilot-web.rule=Host(`mailpilot.vsl-base.com`)"
+      - "traefik.http.routers.mailpilot-web.entrypoints=websecure"
+      - "traefik.http.routers.mailpilot-web.tls.certresolver=myresolver"
+      - "traefik.http.routers.mailpilot-web.priority=50"
+      - "traefik.http.services.mailpilot-web.loadbalancer.server.port=3000"
+    networks:
+      - flux-network
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  runner:
+    build:
+      context: ./mailpilot-runner
+      dockerfile: Dockerfile
+    container_name: mailpilot-runner
+    env_file:
+      - .env.runner
+    restart: unless-stopped
+    command: ["python", "-m", "mailpilot.main", "watch-jobs"]
+
+networks:
+  flux-network:
+    external: true

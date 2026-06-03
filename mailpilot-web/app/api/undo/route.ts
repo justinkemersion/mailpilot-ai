@@ -1,5 +1,5 @@
-import { createServiceClient } from "@/lib/supabase/service";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/session";
+import { fluxJson, postgrestParams } from "@/lib/flux/client";
 import { OAuth2Client } from "google-auth-library";
 import { google } from "googleapis";
 import { NextResponse } from "next/server";
@@ -79,11 +79,7 @@ async function resolveRemoveLabelIds(
  * reverts Gmail changes via googleapis messages.modify, then marks the row [UNDONE].
  */
 export async function POST(request: Request) {
-  const sessionClient = await createClient();
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser();
-
+  const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
@@ -112,34 +108,25 @@ export async function POST(request: Request) {
     );
   }
 
-  const svc = createServiceClient();
-
-  const { data: row, error: fetchError } = await svc
-    .from("processed_emails")
-    .select(
-      `
-      id,
-      gmail_message_id,
-      account_id,
-      user_id,
-      actions_taken,
-      applied_label_names,
-      accounts!inner (
-        token_json,
-        user_id
-      )
-    `
-    )
-    .eq("id", processed_email_id)
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (fetchError) {
-    console.error("undo fetch:", fetchError);
-    return NextResponse.json({ error: fetchError.message }, { status: 500 });
+  let rows: ProcessedEmailJoined[];
+  try {
+    rows = await fluxJson<ProcessedEmailJoined[]>(
+      `/processed_emails${postgrestParams([
+        [
+          "select",
+          "id,gmail_message_id,account_id,user_id,actions_taken,applied_label_names,accounts!inner(token_json,user_id)",
+        ],
+        ["id", `eq.${processed_email_id}`],
+        ["user_id", `eq.${user.id}`],
+        ["limit", 1],
+      ])}`
+    );
+  } catch (err) {
+    console.error("undo fetch:", err);
+    return NextResponse.json({ error: "Failed to fetch processed email" }, { status: 500 });
   }
 
-  const pe = row as ProcessedEmailJoined | null;
+  const pe = rows[0] ?? null;
   if (!pe) {
     return NextResponse.json(
       { error: "Processed email not found or not owned by current user" },
@@ -228,14 +215,20 @@ export async function POST(request: Request) {
   const prevActions = (pe.actions_taken ?? "").trim();
   const newActions = prevActions ? `${prevActions} [UNDONE]` : "[UNDONE]";
 
-  const { error: updateError } = await svc
-    .from("processed_emails")
-    .update({ actions_taken: newActions })
-    .eq("id", processed_email_id)
-    .eq("user_id", user.id);
-
-  if (updateError) {
-    console.error("Failed to mark row as undone:", updateError);
+  try {
+    await fluxJson(
+      `/processed_emails${postgrestParams([
+        ["select", "id"],
+        ["id", `eq.${processed_email_id}`],
+        ["user_id", `eq.${user.id}`],
+      ])}`,
+      {
+        method: "PATCH",
+        json: { actions_taken: newActions },
+      }
+    );
+  } catch (err) {
+    console.error("Failed to mark row as undone:", err);
   }
 
   return NextResponse.json({ ok: true });

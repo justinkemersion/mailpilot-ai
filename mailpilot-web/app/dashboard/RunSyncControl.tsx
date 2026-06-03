@@ -4,10 +4,9 @@ import type {
   RunJobProgress,
   RunJobRow,
 } from "@/app/api/run/route";
-import { createClient } from "@/lib/supabase/client";
 import { Loader2, RefreshCw, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type JobStatus = RunJobRow["status"] | "idle";
 
@@ -24,8 +23,7 @@ const DEFAULT_OPTIONS: RunOptions = {
 };
 
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
-/** Polling backup while Realtime may not deliver (e.g. browser / RLS / WS quirks). */
-const STATUS_POLL_INTERVAL_MS = 2000;
+const STATUS_FALLBACK_POLL_SCHEDULE_MS = [5000, 10000, 15000] as const;
 
 async function fetchRunJobRow(jobId: number): Promise<RunJobRow | null> {
   const res = await fetch(`/api/run?job_id=${jobId}`);
@@ -82,6 +80,10 @@ function ResultSummary({ job }: { job: RunJobRow | null }) {
           {r.processed ?? 0} processed. {prefix}Labels: {r.labels_applied ?? 0}, archived:{" "}
           {r.archived ?? 0}, spam: {r.spam_marked ?? 0}.
         </p>
+        <p className="mt-0.5 text-xs text-green-700 dark:text-green-400">
+          LLM calls: {r.llm_calls ?? 0}, rule-based: {r.prefiltered ?? 0}, skipped by budget:{" "}
+          {r.skipped_by_budget ?? 0}.
+        </p>
       </div>
     );
   }
@@ -100,17 +102,6 @@ function ResultSummary({ job }: { job: RunJobRow | null }) {
   }
 
   return null;
-}
-
-function mergeJobRow(
-  prev: RunJobRow | null,
-  incoming: Record<string, unknown>
-): RunJobRow {
-  const row = incoming as Partial<RunJobRow> & { id?: number };
-  if (!prev || prev.id !== row.id) {
-    return incoming as unknown as RunJobRow;
-  }
-  return { ...prev, ...row } as RunJobRow;
 }
 
 function ActivityLog({ entries }: { entries: RunJobProgress[] }) {
@@ -187,6 +178,11 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
   const activeJobId =
     job?.status === "pending" || job?.status === "running" ? job.id : null;
 
+  const refreshJob = useCallback(async (jobId: number) => {
+    const data = await fetchRunJobRow(jobId);
+    if (data?.id === jobId) setJob(data);
+  }, []);
+
   const progressEntry = job?.progress;
   useEffect(() => {
     if (!progressEntry?.timestamp) return;
@@ -214,60 +210,58 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
 
   useEffect(() => {
     if (activeJobId == null) return;
-
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`run_jobs_${activeJobId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "run_jobs",
-          filter: `id=eq.${activeJobId}`,
-        },
-        (payload) => {
-          setJob((prev) => mergeJobRow(prev, payload.new as Record<string, unknown>));
-        }
-      )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          void fetchRunJobRow(activeJobId).then((data) => {
-            if (data?.id === activeJobId) setJob(data);
-          });
-        }
-      });
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [activeJobId]);
+    void refreshJob(activeJobId);
+  }, [activeJobId, refreshJob]);
 
   useEffect(() => {
     if (activeJobId == null) return;
 
-    const poll = () => {
-      void fetchRunJobRow(activeJobId).then((data) => {
-        if (data?.id === activeJobId) setJob(data);
-      });
+    let cancelled = false;
+    let timeoutId: number | null = null;
+
+    const poll = async (attempt: number) => {
+      if (cancelled) return;
+      if (document.visibilityState === "visible") {
+        await refreshJob(activeJobId);
+      }
+
+      const nextDelay =
+        STATUS_FALLBACK_POLL_SCHEDULE_MS[
+          Math.min(attempt + 1, STATUS_FALLBACK_POLL_SCHEDULE_MS.length - 1)
+        ];
+      timeoutId = window.setTimeout(() => {
+        void poll(attempt + 1);
+      }, nextDelay);
     };
 
-    poll();
-    const interval = setInterval(poll, STATUS_POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [activeJobId]);
+    timeoutId = window.setTimeout(() => {
+      void poll(0);
+    }, STATUS_FALLBACK_POLL_SCHEDULE_MS[0]);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshJob(activeJobId);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [activeJobId, refreshJob]);
 
   useEffect(() => {
     if (activeJobId == null) return;
     setTimedOut(false);
     const t = setTimeout(() => {
       setTimedOut(true);
-      void fetchRunJobRow(activeJobId).then((data) => {
-        if (data?.id === activeJobId) setJob(data);
-      });
+      void refreshJob(activeJobId);
     }, POLL_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [activeJobId]);
+  }, [activeJobId, refreshJob]);
 
   function closeModal() {
     dialogRef.current?.close();

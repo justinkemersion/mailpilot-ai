@@ -1,9 +1,10 @@
-import { createClient } from "@/lib/supabase/server";
-import { createServiceClient } from "@/lib/supabase/service";
+import { getCurrentUser } from "@/lib/auth/session";
+import { fluxJson, postgrestParams } from "@/lib/flux/client";
 import { redirect } from "next/navigation";
 import { ConnectedAccountsList } from "./ConnectedAccountsList";
 import { HistoryTable, type ProcessedEmailRow } from "./HistoryTable";
 import { RunSyncControl } from "./RunSyncControl";
+import { SignOutButton } from "./SignOutButton";
 import type { RunJobRow } from "@/app/api/run/route";
 
 interface ConnectedAccount {
@@ -15,14 +16,14 @@ interface ConnectedAccount {
 }
 
 async function getConnectedAccounts(userId: string): Promise<ConnectedAccount[]> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("accounts")
-    .select("id, email, display_name, active, processing_enabled")
-    .eq("user_id", userId)
-    .eq("active", true)
-    .order("email");
-  const rows = (data as ConnectedAccount[] | null) ?? [];
+  const rows = await fluxJson<ConnectedAccount[]>(
+    `/accounts${postgrestParams([
+      ["select", "id,email,display_name,active,processing_enabled"],
+      ["user_id", `eq.${userId}`],
+      ["active", "eq.true"],
+      ["order", "email.asc"],
+    ])}`
+  );
   return rows.map((row) => ({
     ...row,
     processing_enabled: row.processing_enabled !== false,
@@ -30,45 +31,34 @@ async function getConnectedAccounts(userId: string): Promise<ConnectedAccount[]>
 }
 
 async function getEmailHistory(userId: string): Promise<ProcessedEmailRow[]> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("processed_emails")
-    .select(
-      "id, gmail_message_id, account_id, accounts(email), category, subject, sender, processed_at, message_received_at, actions_taken, was_archived, applied_label_names"
-    )
-    .eq("user_id", userId)
-    .order("message_received_at", { ascending: false, nullsFirst: false })
-    .order("processed_at", { ascending: false })
-    .order("id", { ascending: true })
-    .limit(50);
-  return (data as unknown as ProcessedEmailRow[]) ?? [];
+  return await fluxJson<ProcessedEmailRow[]>(
+    `/processed_emails${postgrestParams([
+      [
+        "select",
+        "id,gmail_message_id,account_id,accounts(email),category,subject,sender,processed_at,message_received_at,actions_taken,was_archived,applied_label_names",
+      ],
+      ["user_id", `eq.${userId}`],
+      ["order", "message_received_at.desc.nullslast"],
+      ["order", "processed_at.desc"],
+      ["order", "id.asc"],
+      ["limit", 50],
+    ])}`
+  );
 }
 
 async function getLatestJob(userId: string): Promise<RunJobRow | null> {
-  const svc = createServiceClient();
-  const { data } = await svc
-    .from("run_jobs")
-    .select(
-      "id, status, options, result, error, progress, created_at, started_at, completed_at"
-    )
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return (data as RunJobRow | null) ?? null;
-}
-
-async function SignOutButton() {
-  return (
-    <form action="/auth/signout" method="post">
-      <button
-        type="submit"
-        className="min-h-11 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 sm:w-auto sm:border-0 sm:px-2 sm:py-1"
-      >
-        Sign out
-      </button>
-    </form>
+  const rows = await fluxJson<RunJobRow[]>(
+    `/run_jobs${postgrestParams([
+      [
+        "select",
+        "id,status,options,result,error,progress,created_at,started_at,completed_at",
+      ],
+      ["user_id", `eq.${userId}`],
+      ["order", "created_at.desc"],
+      ["limit", 1],
+    ])}`
   );
+  return rows[0] ?? null;
 }
 
 export default async function DashboardPage({
@@ -76,11 +66,7 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ connected?: string; error?: string }>;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   const [accounts, history, latestJob] = await Promise.all([
@@ -103,7 +89,7 @@ export default async function DashboardPage({
             </h1>
             <div className="flex min-w-0 flex-col gap-2 border-t border-zinc-200 pt-3 sm:shrink-0 sm:flex-row sm:items-center sm:gap-4 sm:border-0 sm:pt-0">
               <span className="truncate text-sm text-zinc-500 dark:text-zinc-400">
-                {user.email}
+                {user.email ?? user.name ?? user.id}
               </span>
               <SignOutButton />
             </div>

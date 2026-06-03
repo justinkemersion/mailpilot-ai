@@ -1,0 +1,5 @@
+.env.docker
+.env.runner
+.DS_Store
+tmp/
+database/supabase-export/
