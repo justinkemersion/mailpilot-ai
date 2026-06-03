@@ -208,7 +208,7 @@ def watch_jobs_command(
 def supabase_check_command() -> None:
     """
     Verify SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY and that core tables are reachable.
-    Does not require OPENAI_API_KEY.
+    Does not require an OpenAI API key.
     """
     from .persistence import check_supabase_connection
 

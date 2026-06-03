@@ -5,9 +5,12 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any, Iterator
 
-from supabase import Client, create_client
+from typing import TYPE_CHECKING
 
-from .config import load_config, load_supabase_credentials
+from .config import create_db_client, flux_configured, load_config, load_supabase_credentials
+
+if TYPE_CHECKING:
+    from supabase import Client
 from .models import Account, ProcessedEmail
 
 logger = logging.getLogger(__name__)
@@ -15,22 +18,24 @@ logger = logging.getLogger(__name__)
 
 def check_supabase_connection() -> tuple[bool, str]:
     """
-    Verify we can reach Supabase and see expected tables. Returns (ok, message).
+    Verify we can reach the configured database and see expected tables.
+
+    Returns (ok, message). Uses Flux when Flux credentials are configured.
     """
     try:
-        url, key = load_supabase_credentials()
+        client = create_db_client()
     except RuntimeError as exc:
         return False, str(exc)
 
+    backend = "Flux" if flux_configured() else "Supabase"
     try:
-        client = create_client(url, key)
         acc = client.table("accounts").select("id").limit(1).execute()
         _ = acc.data
         pe = client.table("processed_emails").select("id").limit(1).execute()
         _ = pe.data
     except Exception as exc:  # noqa: BLE001 — surface any client/network error
-        return False, f"Supabase request failed: {exc}"
-    return True, "Supabase OK: connected and tables reachable."
+        return False, f"{backend} request failed: {exc}"
+    return True, f"{backend} OK: connected and tables reachable."
 
 
 def _parse_dt(value: str | None) -> datetime:
@@ -44,8 +49,18 @@ def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _is_unique_violation(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return (
+        "23505" in text
+        or "duplicate key value violates unique constraint" in text
+        or "conflict" in text
+        or "409" in text
+    )
+
+
 class SupabaseAccountRepository:
-    def __init__(self, client: Client) -> None:
+    def __init__(self, client: object) -> None:
         self._client = client
 
     def get_by_id(self, account_id: int) -> Account | None:
@@ -105,7 +120,7 @@ class SupabaseAccountRepository:
 
 
 class SupabaseProcessedEmailRepository:
-    def __init__(self, client: Client) -> None:
+    def __init__(self, client: object) -> None:
         self._client = client
 
     def _fetch_row_dict(
@@ -132,6 +147,39 @@ class SupabaseProcessedEmailRepository:
             .execute()
         )
         return bool(res.data)
+
+    def try_claim_processing(
+        self,
+        *,
+        user_id: str,
+        account_id: int,
+        gmail_message_id: str,
+        ttl_seconds: int = 1800,
+    ) -> bool:
+        stale_before = (datetime.now(UTC) - timedelta(seconds=max(0, ttl_seconds))).isoformat()
+        self._client.table("processing_claims").delete().eq("account_id", account_id).eq(
+            "gmail_message_id", gmail_message_id
+        ).lt("claimed_at", stale_before).execute()
+
+        try:
+            self._client.table("processing_claims").insert(
+                {
+                    "user_id": user_id,
+                    "account_id": account_id,
+                    "gmail_message_id": gmail_message_id,
+                    "claimed_at": _iso_now(),
+                }
+            ).execute()
+            return True
+        except Exception as exc:
+            if _is_unique_violation(exc):
+                return False
+            raise
+
+    def release_processing_claim(self, account_id: int, gmail_message_id: str) -> None:
+        self._client.table("processing_claims").delete().eq("account_id", account_id).eq(
+            "gmail_message_id", gmail_message_id
+        ).execute()
 
     def mark_processed(
         self,
@@ -173,7 +221,14 @@ class SupabaseProcessedEmailRepository:
             "applied_label_names": applied_label_names,
         }
         # supabase-py 2.x: insert() returns a builder with only .execute() — no .select() chain.
-        self._client.table("processed_emails").insert(row).execute()
+        try:
+            self._client.table("processed_emails").insert(row).execute()
+        except Exception as exc:
+            if _is_unique_violation(exc):
+                existing = self._fetch_row_dict(account_id, gmail_message_id)
+                if existing:
+                    return self._row_to_processed(existing)
+            raise
 
         inserted = self._fetch_row_dict(account_id, gmail_message_id)
         if not inserted:
@@ -329,7 +384,7 @@ class RunJobRepository:
     claim and update any pending job regardless of RLS user context.
     """
 
-    def __init__(self, client: Client) -> None:
+    def __init__(self, client: object) -> None:
         self._client = client
 
     def claim_next_pending(self) -> dict[str, Any] | None:
@@ -410,6 +465,6 @@ def repository_context() -> Iterator[tuple[SupabaseAccountRepository, SupabasePr
     """
     Yields (account_repo, processed_repo) backed by Supabase using the service role key.
     """
-    cfg = load_config()
-    client = create_client(cfg.supabase_url, cfg.supabase_service_role_key)
+    _ = load_config()
+    client = create_db_client()
     yield SupabaseAccountRepository(client), SupabaseProcessedEmailRepository(client)

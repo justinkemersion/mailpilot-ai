@@ -39,16 +39,114 @@ class MailPilotConfig:
     log_level: str
 
 
+def _get_int_env(name: str, default: int) -> int:
+    _load_dotenv()
+    raw = os.getenv(name, str(default))
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 def get_openai_model_name() -> str:
     """
     Return the OpenAI model name to use for classification.
 
     This is intentionally independent from the main MailPilotConfig so that
     tests can configure a classifier with a dummy OpenAI client without
-    requiring OPENAI_API_KEY to be set.
+    requiring an OpenAI API key to be set.
     """
     _load_dotenv()
     return os.getenv("MAILPILOT_OPENAI_MODEL", "gpt-4.1-mini")
+
+
+def get_ai_provider() -> str:
+    """
+    Return the configured AI provider.
+
+    Controlled by MAILPILOT_AI_PROVIDER (default: openai).
+    Reserved for future provider routing; valid values today are documented
+    but the runner still uses the OpenAI-backed classifier.
+    """
+    _load_dotenv()
+    return (os.getenv("MAILPILOT_AI_PROVIDER") or "openai").strip().lower()
+
+
+def get_openai_api_key() -> str:
+    """
+    Return the OpenAI API key used for classification.
+
+    Controlled by OPENAI_API_KEY.
+    """
+    _load_dotenv()
+    value = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if value:
+        return value
+    raise RuntimeError("OPENAI_API_KEY is required but not set")
+
+
+def get_cloudflare_base_url() -> str:
+    """
+    Return the base URL for a future Cloudflare-backed classification endpoint.
+
+    Controlled by MAILPILOT_CLOUDFLARE_BASE_URL.
+    """
+    _load_dotenv()
+    return (os.getenv("MAILPILOT_CLOUDFLARE_BASE_URL") or "").strip()
+
+
+def get_cloudflare_api_token() -> str:
+    """
+    Return the API token for a future Cloudflare-backed classification endpoint.
+
+    Controlled by MAILPILOT_CLOUDFLARE_API_TOKEN.
+    """
+    _load_dotenv()
+    return (os.getenv("MAILPILOT_CLOUDFLARE_API_TOKEN") or "").strip()
+
+
+def get_cloudflare_model_name() -> str:
+    """
+    Return the Cloudflare small-model name to use when that provider is wired in.
+
+    Controlled by MAILPILOT_CLOUDFLARE_MODEL
+    (default: @cf/meta/llama-3.1-8b-instruct-fast).
+    """
+    _load_dotenv()
+    return os.getenv(
+        "MAILPILOT_CLOUDFLARE_MODEL",
+        "@cf/meta/llama-3.1-8b-instruct-fast",
+    )
+
+
+def get_ai_max_subject_chars() -> int:
+    """
+    Return the maximum subject characters included in an LLM request.
+
+    Controlled by MAILPILOT_AI_MAX_SUBJECT_CHARS (default: 200).
+    Set to 0 to omit subjects entirely (usually not recommended).
+    """
+    return _get_int_env("MAILPILOT_AI_MAX_SUBJECT_CHARS", 200)
+
+
+def get_ai_max_snippet_chars() -> int:
+    """
+    Return the maximum snippet characters included in an LLM request.
+
+    Controlled by MAILPILOT_AI_MAX_SNIPPET_CHARS (default: 600).
+    Set to 0 to omit snippets entirely.
+    """
+    return _get_int_env("MAILPILOT_AI_MAX_SNIPPET_CHARS", 600)
+
+
+def get_ai_max_body_chars() -> int:
+    """
+    Return the maximum body characters included in an LLM request.
+
+    Controlled by MAILPILOT_AI_MAX_BODY_CHARS (default: 2000).
+    Set to 0 to omit bodies entirely for the cheapest classification path.
+    """
+    return _get_int_env("MAILPILOT_AI_MAX_BODY_CHARS", 2000)
 
 
 def get_safe_sender_domains() -> list[str]:
@@ -81,12 +179,7 @@ def get_max_archives_per_run() -> int:
 
     Controlled by MAILPILOT_MAX_ARCHIVES_PER_RUN (default: 30).
     """
-    _load_dotenv()
-    raw = os.getenv("MAILPILOT_MAX_ARCHIVES_PER_RUN", "30")
-    try:
-        return int(raw)
-    except ValueError:
-        return 30
+    return _get_int_env("MAILPILOT_MAX_ARCHIVES_PER_RUN", 30)
 
 
 def get_max_spam_marks_per_run() -> int:
@@ -95,12 +188,7 @@ def get_max_spam_marks_per_run() -> int:
 
     Controlled by MAILPILOT_MAX_SPAM_MARKS_PER_RUN (default: 10).
     """
-    _load_dotenv()
-    raw = os.getenv("MAILPILOT_MAX_SPAM_MARKS_PER_RUN", "10")
-    try:
-        return int(raw)
-    except ValueError:
-        return 10
+    return _get_int_env("MAILPILOT_MAX_SPAM_MARKS_PER_RUN", 10)
 
 
 def get_max_label_actions_per_run() -> int:
@@ -109,12 +197,79 @@ def get_max_label_actions_per_run() -> int:
 
     Controlled by MAILPILOT_MAX_LABEL_ACTIONS_PER_RUN (default: 200).
     """
-    _load_dotenv()
-    raw = os.getenv("MAILPILOT_MAX_LABEL_ACTIONS_PER_RUN", "200")
-    try:
-        return int(raw)
-    except ValueError:
-        return 200
+    return _get_int_env("MAILPILOT_MAX_LABEL_ACTIONS_PER_RUN", 200)
+
+
+def get_max_classifications_per_run() -> int:
+    """
+    Return the maximum number of LLM classifications allowed per run.
+
+    Controlled by MAILPILOT_MAX_CLASSIFICATIONS_PER_RUN (default: 50).
+    """
+    return _get_int_env("MAILPILOT_MAX_CLASSIFICATIONS_PER_RUN", 50)
+
+
+def get_max_classifications_per_account() -> int:
+    """
+    Return the maximum number of LLM classifications allowed per account in a run.
+
+    Controlled by MAILPILOT_MAX_CLASSIFICATIONS_PER_ACCOUNT (default: 25).
+    """
+    return _get_int_env("MAILPILOT_MAX_CLASSIFICATIONS_PER_ACCOUNT", 25)
+
+
+def get_max_dry_run_classifications() -> int:
+    """
+    Return the maximum number of LLM classifications allowed during dry runs.
+
+    Controlled by MAILPILOT_DRY_RUN_MAX_CLASSIFICATIONS (default: 10).
+    """
+    return _get_int_env("MAILPILOT_DRY_RUN_MAX_CLASSIFICATIONS", 10)
+
+
+def get_gmail_max_messages_per_account() -> int:
+    """
+    Return the maximum number of Gmail message ids fetched per account.
+
+    Controlled by MAILPILOT_GMAIL_MAX_MESSAGES_PER_ACCOUNT (default: 100).
+    """
+    return _get_int_env("MAILPILOT_GMAIL_MAX_MESSAGES_PER_ACCOUNT", 100)
+
+
+def get_classification_delay_ms() -> int:
+    """
+    Return the minimum spacing between OpenAI classification requests.
+
+    Controlled by MAILPILOT_CLASSIFICATION_DELAY_MS (default: 250).
+    """
+    return _get_int_env("MAILPILOT_CLASSIFICATION_DELAY_MS", 250)
+
+
+def get_openai_max_retries() -> int:
+    """
+    Return how many MailPilot-owned retries to allow for OpenAI 429s.
+
+    Controlled by MAILPILOT_OPENAI_MAX_RETRIES (default: 4).
+    """
+    return _get_int_env("MAILPILOT_OPENAI_MAX_RETRIES", 4)
+
+
+def get_openai_retry_base_ms() -> int:
+    """
+    Return the base exponential backoff for OpenAI 429 retries.
+
+    Controlled by MAILPILOT_OPENAI_RETRY_BASE_MS (default: 750).
+    """
+    return _get_int_env("MAILPILOT_OPENAI_RETRY_BASE_MS", 750)
+
+
+def get_processing_claim_ttl_seconds() -> int:
+    """
+    Return how long an in-flight processing claim can live before being treated as stale.
+
+    Controlled by MAILPILOT_PROCESSING_CLAIM_TTL_SECONDS (default: 1800).
+    """
+    return _get_int_env("MAILPILOT_PROCESSING_CLAIM_TTL_SECONDS", 1800)
 
 
 def get_archive_security_noise() -> bool:
@@ -138,10 +293,43 @@ def get_archive_receipts() -> bool:
     return raw in ("1", "true", "yes")
 
 
+def load_flux_credentials() -> tuple[str, str, str]:
+    """
+    Return (FLUX_API_URL, FLUX_SERVICE_TOKEN, FLUX_POSTGREST_SCHEMA).
+
+    FLUX_API_URL may be set explicitly or via NEXT_PUBLIC_FLUX_URL (same value as the web app).
+    """
+    _load_dotenv()
+    url = (
+        os.getenv("FLUX_API_URL")
+        or os.getenv("NEXT_PUBLIC_FLUX_URL")
+        or ""
+    ).strip()
+    token = (os.getenv("FLUX_SERVICE_TOKEN") or "").strip()
+    schema = (os.getenv("FLUX_POSTGREST_SCHEMA") or "api").strip() or "api"
+    if not url or not token:
+        raise RuntimeError(
+            "FLUX_API_URL (or NEXT_PUBLIC_FLUX_URL) and FLUX_SERVICE_TOKEN are required but not set"
+        )
+    return url, token, schema
+
+
+def flux_configured() -> bool:
+    """True when Flux PostgREST credentials are present in the environment."""
+    _load_dotenv()
+    url = (
+        os.getenv("FLUX_API_URL")
+        or os.getenv("NEXT_PUBLIC_FLUX_URL")
+        or ""
+    ).strip()
+    token = (os.getenv("FLUX_SERVICE_TOKEN") or "").strip()
+    return bool(url and token)
+
+
 def load_supabase_credentials() -> tuple[str, str]:
     """
     Return (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) for health checks that
-    must not require OPENAI_API_KEY.
+    must not require an OpenAI API key.
     """
     _load_dotenv()
     url = (os.getenv("SUPABASE_URL") or "").strip()
@@ -153,6 +341,24 @@ def load_supabase_credentials() -> tuple[str, str]:
     return url, key
 
 
+def create_db_client():
+    """
+    Return a database client for repositories (Flux PostgREST or Supabase).
+
+    Prefers Flux when FLUX_API_URL/NEXT_PUBLIC_FLUX_URL and FLUX_SERVICE_TOKEN are set.
+    """
+    if flux_configured():
+        from .flux_postgrest import FluxPostgrestClient
+
+        url, token, schema = load_flux_credentials()
+        return FluxPostgrestClient(url, token, schema)
+
+    from supabase import create_client
+
+    supabase_url, supabase_key = load_supabase_credentials()
+    return create_client(supabase_url, supabase_key)
+
+
 def load_config() -> MailPilotConfig:
     """
     Build a MailPilotConfig from environment variables.
@@ -162,11 +368,12 @@ def load_config() -> MailPilotConfig:
     """
     _load_dotenv()
 
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if not openai_api_key:
-        raise RuntimeError("OPENAI_API_KEY is required but not set")
+    openai_api_key = get_openai_api_key()
 
-    supabase_url, supabase_service_role_key = load_supabase_credentials()
+    if flux_configured():
+        supabase_url, supabase_service_role_key = "", ""
+    else:
+        supabase_url, supabase_service_role_key = load_supabase_credentials()
 
     poll_interval_seconds_raw = os.getenv("MAILPILOT_POLL_INTERVAL_SECONDS", "300")
     try:

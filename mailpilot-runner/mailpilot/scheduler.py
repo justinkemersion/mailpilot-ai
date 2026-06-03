@@ -5,10 +5,8 @@ import signal
 import time
 from typing import Any, Callable, Optional
 
-from supabase import create_client
-
 from .ai_classifier import ClassificationError
-from .config import load_config
+from .config import create_db_client, load_config
 from .email_processor import EmailProcessor, RunResult
 from .gmail_client import GmailApiError
 from .persistence import RunJobRepository
@@ -87,6 +85,10 @@ def _run_result_to_dict(result: RunResult) -> dict[str, Any]:
         "archived": result.archived,
         "spam_marked": result.spam_marked,
         "dry_run": result.dry_run,
+        "llm_calls": result.llm_calls,
+        "prefiltered": result.prefiltered,
+        "skipped_by_budget": result.skipped_by_budget,
+        "skipped_by_claim_conflict": result.skipped_by_claim_conflict,
     }
 
 
@@ -99,8 +101,8 @@ def watch_jobs(poll_interval: int = 5) -> None:
     run_once() with the stored options, then marks the job done or failed.
     SIGINT / SIGTERM cause a clean exit after the current job finishes.
     """
-    cfg = load_config()
-    client = create_client(cfg.supabase_url, cfg.supabase_service_role_key)
+    _ = load_config()
+    client = create_db_client()
     job_repo = RunJobRepository(client)
 
     stop = False
@@ -178,10 +180,12 @@ def watch_jobs(poll_interval: int = 5) -> None:
             )
             job_repo.mark_done(job_id, _run_result_to_dict(result))
             logger.info(
-                "watch-jobs: job %s done — %s processed, %s archived",
+                "watch-jobs: job %s done — %s processed, %s archived, %s llm calls, %s skipped by budget",
                 job_id,
                 result.processed,
                 result.archived,
+                result.llm_calls,
+                result.skipped_by_budget,
             )
         except Exception as exc:  # noqa: BLE001
             error_msg = f"{type(exc).__name__}: {exc}"

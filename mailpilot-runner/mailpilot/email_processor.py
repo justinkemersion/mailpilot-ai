@@ -2,16 +2,28 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parseaddr
+from typing import Any
 
-from .ai_classifier import ClassificationError, Classifier, OpenAIClassifier
+from .ai_classifier import (
+    ClassificationError,
+    ClassifiedEmail,
+    Classifier,
+    OpenAIClassifier,
+)
 from .config import (
     get_archive_receipts,
+    get_gmail_max_messages_per_account,
     get_max_archives_per_run,
+    get_max_classifications_per_account,
+    get_max_classifications_per_run,
+    get_max_dry_run_classifications,
     get_max_label_actions_per_run,
     get_max_spam_marks_per_run,
+    get_processing_claim_ttl_seconds,
     get_safe_sender_domains,
     get_safe_senders,
 )
@@ -26,6 +38,19 @@ from .models import Account
 
 logger = logging.getLogger(__name__)
 
+_RECEIPT_PRIMARY_RE = re.compile(
+    r"\b(receipt|invoice|order confirmation|payment received|transaction confirmation|your order)\b"
+)
+_RECEIPT_SUPPORT_RE = re.compile(
+    r"\b(order number|tracking number|billing|subtotal|payment method|charged to|amount due)\b"
+)
+_NEWSLETTER_RE = re.compile(
+    r"\b(unsubscribe|manage preferences|email preferences|view in browser|newsletter)\b"
+)
+_PROMOTION_RE = re.compile(
+    r"\b(% off|discount|coupon|limited time|shop now|deal|sale ends|special offer)\b"
+)
+
 
 def _sender_for_storage(sender: str | None) -> str:
     """Persist a non-empty sender for history/undo UX; Gmail may omit From on some payloads."""
@@ -39,6 +64,79 @@ def _actions_taken_for_storage(category: str, summary: AppliedActionSummary) -> 
     if t:
         return t
     return f"Processed as {category}; no MailPilot Gmail changes applied"
+
+
+def _merge_limits(*limits: int) -> int:
+    finite = [limit for limit in limits if limit >= 0]
+    if not finite:
+        return -1
+    return min(finite)
+
+
+def _normalize_message_text(
+    subject: str | None,
+    sender: str | None,
+    snippet: str | None,
+    body: str | None,
+) -> str:
+    parts = [
+        (subject or "").lower(),
+        (sender or "").lower(),
+        (snippet or "").lower(),
+        (body or "")[:2000].lower(),
+    ]
+    return "\n".join(part for part in parts if part)
+
+
+def _is_automated_sender(sender: str | None) -> bool:
+    sender_text = (sender or "").lower()
+    return any(token in sender_text for token in ("no-reply", "noreply", "do-not-reply"))
+
+
+def _rule_based_classification(
+    subject: str | None,
+    sender: str | None,
+    snippet: str | None,
+    body: str | None,
+) -> ClassifiedEmail | None:
+    text = _normalize_message_text(subject, sender, snippet, body)
+
+    if _RECEIPT_PRIMARY_RE.search(text) and (
+        _RECEIPT_SUPPORT_RE.search(text) or _is_automated_sender(sender)
+    ):
+        reason = "Rule-based receipt shortcut"
+        return ClassifiedEmail(
+            category="receipts",
+            confidence=0.99,
+            rationale=reason,
+            noise=True,
+            noise_type="receipt",
+            reason=reason,
+        )
+
+    if _NEWSLETTER_RE.search(text) and _PROMOTION_RE.search(text):
+        reason = "Rule-based promotion shortcut"
+        return ClassifiedEmail(
+            category="promotions",
+            confidence=0.98,
+            rationale=reason,
+            noise=True,
+            noise_type="promotion",
+            reason=reason,
+        )
+
+    if _NEWSLETTER_RE.search(text):
+        reason = "Rule-based newsletter shortcut"
+        return ClassifiedEmail(
+            category="newsletters",
+            confidence=0.98,
+            rationale=reason,
+            noise=True,
+            noise_type="newsletter",
+            reason=reason,
+        )
+
+    return None
 
 
 @dataclass
@@ -61,6 +159,10 @@ class RunResult:
     archived: int
     spam_marked: int
     dry_run: bool
+    llm_calls: int = 0
+    prefiltered: int = 0
+    skipped_by_budget: int = 0
+    skipped_by_claim_conflict: int = 0
     accounts_needing_reauth: list[str] = field(default_factory=list)
 
 
@@ -89,11 +191,20 @@ class EmailProcessor:
             max_spam_marks_per_run if max_spam_marks_per_run is not None else get_max_spam_marks_per_run()
         )
         self._max_label_actions_per_run = get_max_label_actions_per_run()
+        self._max_classifications_per_run = get_max_classifications_per_run()
+        self._max_classifications_per_account = get_max_classifications_per_account()
+        self._max_dry_run_classifications = get_max_dry_run_classifications()
+        self._gmail_max_messages_per_account = get_gmail_max_messages_per_account()
+        self._processing_claim_ttl_seconds = get_processing_claim_ttl_seconds()
         self._archives_this_run = 0
         self._spam_marks_this_run = 0
         self._label_actions_this_run = 0
         self._candidates_this_run = 0
         self._messages_processed_this_run = 0
+        self._classifications_this_run = 0
+        self._prefiltered_this_run = 0
+        self._skipped_by_budget_this_run = 0
+        self._skipped_by_claim_conflict_this_run = 0
         self._dry_run = False
         self._search_query = search_query
         self._archive_receipts = get_archive_receipts()
@@ -101,6 +212,8 @@ class EmailProcessor:
         self._safe_sender_domains = set(get_safe_sender_domains())
         self._safe_senders = set(get_safe_senders())
         self._accounts_needing_reauth: list[str] = []
+        self._run_budget_hit = False
+        self._account_budget_hits_reported: set[str] = set()
         self._run_job_id = run_job_id
         self._run_job_repo = run_job_repo
 
@@ -136,6 +249,78 @@ class EmailProcessor:
                 return True
         return False
 
+    def _effective_run_classification_limit(self) -> int:
+        if not self._dry_run:
+            return self._max_classifications_per_run
+        return _merge_limits(
+            self._max_classifications_per_run,
+            self._max_dry_run_classifications,
+        )
+
+    def _classification_budget_scope(self, account: Account, account_calls: int) -> str | None:
+        run_limit = self._effective_run_classification_limit()
+        if run_limit >= 0 and self._classifications_this_run >= run_limit:
+            if not self._run_budget_hit:
+                self._run_budget_hit = True
+                logger.warning(
+                    "LLM classification budget reached for this run (%s); remaining messages will be skipped",
+                    run_limit,
+                )
+                self._report_progress(
+                    "throttled",
+                    f"Reached LLM request budget for this run ({run_limit}); remaining messages will be skipped.",
+                )
+            return "run"
+
+        account_limit = self._max_classifications_per_account
+        if self._dry_run:
+            account_limit = _merge_limits(account_limit, self._max_dry_run_classifications)
+        if account_limit >= 0 and account_calls >= account_limit:
+            if account.email not in self._account_budget_hits_reported:
+                self._account_budget_hits_reported.add(account.email)
+                logger.warning(
+                    "LLM classification budget reached for account %s (%s)",
+                    account.email,
+                    account_limit,
+                )
+                self._report_progress(
+                    "throttled",
+                    f"Reached per-account LLM budget for {account.email} ({account_limit}); moving on.",
+                )
+            return "account"
+
+        return None
+
+    def _classify_message(
+        self,
+        account: Account,
+        msg: Any,
+        account_calls: int,
+    ) -> tuple[ClassifiedEmail | None, int, str | None]:
+        shortcut = _rule_based_classification(
+            subject=getattr(msg, "subject", None),
+            sender=getattr(msg, "sender", None),
+            snippet=getattr(msg, "snippet", None),
+            body=getattr(msg, "body", None),
+        )
+        if shortcut is not None:
+            self._prefiltered_this_run += 1
+            return shortcut, account_calls, None
+
+        budget_scope = self._classification_budget_scope(account, account_calls)
+        if budget_scope is not None:
+            self._skipped_by_budget_this_run += 1
+            return None, account_calls, budget_scope
+
+        classification = self._classifier.classify(
+            subject=msg.subject,
+            sender=msg.sender,
+            body=msg.body,
+            snippet=msg.snippet,
+        )
+        self._classifications_this_run += 1
+        return classification, account_calls + 1, None
+
     def enable_dry_run(self) -> None:
         """
         Enable dry-run mode, where actions are logged but not sent to Gmail.
@@ -164,7 +349,13 @@ class EmailProcessor:
         self._label_actions_this_run = 0
         self._candidates_this_run = 0
         self._messages_processed_this_run = 0
+        self._classifications_this_run = 0
+        self._prefiltered_this_run = 0
+        self._skipped_by_budget_this_run = 0
+        self._skipped_by_claim_conflict_this_run = 0
         self._accounts_needing_reauth = []
+        self._run_budget_hit = False
+        self._account_budget_hits_reported = set()
         with repository_context() as (account_repo, processed_repo):
             accounts = account_repo.list_active(user_id=user_id)
             if not accounts:
@@ -177,6 +368,10 @@ class EmailProcessor:
                     archived=0,
                     spam_marked=0,
                     dry_run=self._dry_run,
+                    llm_calls=0,
+                    prefiltered=0,
+                    skipped_by_budget=0,
+                    skipped_by_claim_conflict=0,
                     accounts_needing_reauth=[],
                 )
 
@@ -186,6 +381,8 @@ class EmailProcessor:
             )
 
             for account in accounts:
+                if self._classification_budget_scope(account, 0) == "run":
+                    break
                 self._process_account(account, processed_repo)
 
             self._persist_refreshed_tokens(account_repo)
@@ -198,6 +395,10 @@ class EmailProcessor:
             archived=self._archives_this_run,
             spam_marked=self._spam_marks_this_run,
             dry_run=self._dry_run,
+            llm_calls=self._classifications_this_run,
+            prefiltered=self._prefiltered_this_run,
+            skipped_by_budget=self._skipped_by_budget_this_run,
+            skipped_by_claim_conflict=self._skipped_by_claim_conflict_this_run,
             accounts_needing_reauth=list(self._accounts_needing_reauth),
         )
 
@@ -232,7 +433,7 @@ class EmailProcessor:
                 account,
                 label_ids=[inbox_label],
                 query=self._search_query,
-                max_results=100,
+                max_results=self._gmail_max_messages_per_account,
             )
         except GmailAuthError as exc:
             logger.error("Gmail sign-in required for %s: %s", account.email, exc)
@@ -261,110 +462,127 @@ class EmailProcessor:
         )
 
         handled_new = 0
+        account_llm_calls = 0
         for message_id in message_ids:
-            if processed_repo.is_processed(account.id, message_id):
+            claimed = processed_repo.try_claim_processing(
+                user_id=account.user_id,
+                account_id=account.id,
+                gmail_message_id=message_id,
+                ttl_seconds=self._processing_claim_ttl_seconds,
+            )
+            if not claimed:
+                self._skipped_by_claim_conflict_this_run += 1
                 continue
 
             try:
-                msg = self._gmail_client.get_message(account, message_id)
-            except GmailAuthError as exc:
-                logger.error("Gmail sign-in required for %s: %s", account.email, exc)
-                self._record_reauth_skip(account)
-                break
-            except GmailApiError as exc:
-                logger.error(
-                    "Failed to fetch message %s for account %s; skipping message: %s",
-                    message_id,
-                    account.email,
-                    exc,
-                )
-                continue
-            is_safe = self._is_safe_sender(msg.sender)
-            try:
-                classification = self._classifier.classify(
-                    subject=msg.subject,
-                    sender=msg.sender,
-                    body=msg.body,
-                    snippet=msg.snippet,
-                )
-            except ClassificationError as exc:
-                logger.error(
-                    "Classification failed for message %s in account %s; skipping message: %s",
-                    msg.id,
-                    account.email,
-                    exc,
-                )
-                continue
+                if processed_repo.is_processed(account.id, message_id):
+                    continue
 
-            if self._dry_run:
+                try:
+                    msg = self._gmail_client.get_message(account, message_id)
+                except GmailAuthError as exc:
+                    logger.error("Gmail sign-in required for %s: %s", account.email, exc)
+                    self._record_reauth_skip(account)
+                    break
+                except GmailApiError as exc:
+                    logger.error(
+                        "Failed to fetch message %s for account %s; skipping message: %s",
+                        message_id,
+                        account.email,
+                        exc,
+                    )
+                    continue
+
+                is_safe = self._is_safe_sender(msg.sender)
+                try:
+                    classification, account_llm_calls, budget_scope = self._classify_message(
+                        account, msg, account_llm_calls
+                    )
+                except ClassificationError as exc:
+                    logger.error(
+                        "Classification failed for message %s in account %s; skipping message: %s",
+                        msg.id,
+                        account.email,
+                        exc,
+                    )
+                    continue
+
+                if budget_scope is not None:
+                    break
+                if classification is None:
+                    continue
+
+                if self._dry_run:
+                    self._messages_processed_this_run += 1
+                    handled_new += 1
+                    if handled_new % 7 == 0:
+                        self._report_progress(
+                            "processing",
+                            f"Processed {handled_new} new message(s) for {account.email}…",
+                        )
+                    logger.info(
+                        "DRY-RUN: would classify message %s for %s as %s",
+                        msg.id,
+                        account.email,
+                        classification.category,
+                    )
+                    continue
+
+                msg_received: datetime | None = None
+                internal_ms = getattr(msg, "internal_date_ms", None)
+                if internal_ms is not None:
+                    msg_received = datetime.fromtimestamp(internal_ms / 1000.0, tz=UTC)
+
+                try:
+                    pe = processed_repo.mark_processed(
+                        user_id=account.user_id,
+                        account_id=account.id,
+                        gmail_message_id=msg.id,
+                        category=classification.category,
+                        subject=msg.subject,
+                        gmail_thread_id=msg.thread_id,
+                        raw_labels=",".join(msg.labels) if msg.labels else None,
+                        sender=_sender_for_storage(msg.sender),
+                        message_received_at=msg_received,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Failed to persist processed email %s for account %s; skipping actions: %s",
+                        msg.id,
+                        account.email,
+                        exc,
+                    )
+                    continue
+
+                try:
+                    summary = self._apply_actions(
+                        account=account,
+                        msg_id=msg.id,
+                        labels_map=labels_map,
+                        category=classification.category,
+                        is_safe_sender=is_safe,
+                        noise_type=classification.noise_type,
+                    )
+                except GmailAuthError as exc:
+                    logger.error("Gmail sign-in required for %s: %s", account.email, exc)
+                    self._record_reauth_skip(account)
+                    break
+                applied_json = json.dumps(summary.label_names) if summary.label_names else None
+                processed_repo.update_action_metadata(
+                    pe.id,
+                    _actions_taken_for_storage(classification.category, summary),
+                    summary.was_archived,
+                    applied_json,
+                )
                 self._messages_processed_this_run += 1
                 handled_new += 1
                 if handled_new % 7 == 0:
                     self._report_progress(
-                        "processing",
-                        f"Processed {handled_new} new message(s) for {account.email}…",
+                        "labels",
+                        f"Applied actions for {handled_new} message(s) on {account.email}…",
                     )
-                logger.info(
-                    "DRY-RUN: would classify message %s for %s as %s",
-                    msg.id,
-                    account.email,
-                    classification.category,
-                )
-                continue
-
-            msg_received: datetime | None = None
-            internal_ms = getattr(msg, "internal_date_ms", None)
-            if internal_ms is not None:
-                msg_received = datetime.fromtimestamp(internal_ms / 1000.0, tz=UTC)
-
-            try:
-                pe = processed_repo.mark_processed(
-                    user_id=account.user_id,
-                    account_id=account.id,
-                    gmail_message_id=msg.id,
-                    category=classification.category,
-                    subject=msg.subject,
-                    gmail_thread_id=msg.thread_id,
-                    raw_labels=",".join(msg.labels) if msg.labels else None,
-                    sender=_sender_for_storage(msg.sender),
-                    message_received_at=msg_received,
-                )
-            except Exception as exc:
-                logger.error(
-                    "Failed to persist processed email %s for account %s; skipping actions: %s",
-                    msg.id,
-                    account.email,
-                    exc,
-                )
-                continue
-
-            try:
-                summary = self._apply_actions(
-                    account=account,
-                    msg_id=msg.id,
-                    labels_map=labels_map,
-                    category=classification.category,
-                    is_safe_sender=is_safe,
-                    noise_type=classification.noise_type,
-                )
-            except GmailAuthError as exc:
-                logger.error("Gmail sign-in required for %s: %s", account.email, exc)
-                self._record_reauth_skip(account)
-                break
-            applied_json = json.dumps(summary.label_names) if summary.label_names else None
-            processed_repo.update_action_metadata(
-                pe.id,
-                _actions_taken_for_storage(classification.category, summary),
-                summary.was_archived,
-                applied_json,
-            )
-            self._messages_processed_this_run += 1
-            handled_new += 1
-            if handled_new % 7 == 0:
-                self._report_progress(
-                    "labels",
-                    f"Applied actions for {handled_new} message(s) on {account.email}…",
-                )
+            finally:
+                processed_repo.release_processing_claim(account.id, message_id)
 
         self._report_progress(
             "account_done",

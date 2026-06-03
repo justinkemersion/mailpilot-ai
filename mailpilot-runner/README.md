@@ -142,7 +142,22 @@ Every subcommand below works with both prefixes.
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | — | Service role key (**trusted machines only**; bypasses RLS). |
 | `MAILPILOT_POLL_INTERVAL_SECONDS` | No | `300` | Default seconds between loops for `run` (overridden by `--interval`). |
 | `MAILPILOT_LOG_LEVEL` | No | `INFO` | Logging level (`DEBUG`, `INFO`, …). |
+| `MAILPILOT_AI_PROVIDER` | No | `openai` | Provider slot for future routing. Today the runner still uses the OpenAI-backed classifier. |
 | `MAILPILOT_OPENAI_MODEL` | No | `gpt-4.1-mini` | Model name for the classifier. |
+| `MAILPILOT_AI_MAX_SUBJECT_CHARS` | No | `200` | Max subject characters included in each AI request. Lower values save tokens. |
+| `MAILPILOT_AI_MAX_SNIPPET_CHARS` | No | `600` | Max snippet characters included in each AI request. Lower values save tokens. |
+| `MAILPILOT_AI_MAX_BODY_CHARS` | No | `2000` | Max body characters included in each AI request. Set to `0` for the cheapest, body-free path. |
+| `MAILPILOT_CLASSIFICATION_DELAY_MS` | No | `250` | Minimum spacing between OpenAI classification requests. |
+| `MAILPILOT_OPENAI_MAX_RETRIES` | No | `4` | MailPilot-owned retry count for OpenAI 429 responses. |
+| `MAILPILOT_OPENAI_RETRY_BASE_MS` | No | `750` | Base exponential backoff for OpenAI 429 retries. |
+| `MAILPILOT_CLOUDFLARE_BASE_URL` | No | empty | Future Cloudflare classification endpoint (for example a Worker on your own domain). Not active yet. |
+| `MAILPILOT_CLOUDFLARE_API_TOKEN` | No | empty | Future Cloudflare auth token. Not active yet. |
+| `MAILPILOT_CLOUDFLARE_MODEL` | No | `@cf/meta/llama-3.1-8b-instruct-fast` | Future Cloudflare small-model name. Not active yet. |
+| `MAILPILOT_MAX_CLASSIFICATIONS_PER_RUN` | No | `50` | Maximum LLM classifications allowed in one run. |
+| `MAILPILOT_MAX_CLASSIFICATIONS_PER_ACCOUNT` | No | `25` | Maximum LLM classifications per account in one run. |
+| `MAILPILOT_DRY_RUN_MAX_CLASSIFICATIONS` | No | `10` | Maximum LLM classifications during `--dry-run`. |
+| `MAILPILOT_GMAIL_MAX_MESSAGES_PER_ACCOUNT` | No | `100` | Maximum Gmail candidate messages fetched per account. |
+| `MAILPILOT_PROCESSING_CLAIM_TTL_SECONDS` | No | `1800` | Expiry window for in-flight message claims after a crash. |
 | `MAILPILOT_ARCHIVE_SECURITY_NOISE` | No | off | Set to `1`, `true`, or `yes` to archive routine security “noise” (see CLI reference). |
 | `MAILPILOT_ARCHIVE_RECEIPTS` | No | off | Set to `1`, `true`, or `yes` to archive receipts / transactional mail. |
 | `MAILPILOT_SAFE_SENDER_DOMAINS` | No | empty | Comma-separated domains; matching senders skip spam and get gentler archive behavior. |
@@ -151,7 +166,21 @@ Every subcommand below works with both prefixes.
 | `MAILPILOT_MAX_SPAM_MARKS_PER_RUN` | No | `10` | Maximum spam label applications per run. |
 | `MAILPILOT_MAX_LABEL_ACTIONS_PER_RUN` | No | `200` | Maximum Gmail label modifications per run. |
 
-`supabase-check` does **not** require `OPENAI_API_KEY`; it only checks Supabase connectivity and table reachability.
+`supabase-check` does **not** require an OpenAI API key; it only checks database connectivity and table reachability (Flux or Supabase).
+
+### Production (systemd)
+
+On a VPS, run **`watch-jobs`** under systemd instead of a Docker sidecar. From the **repo root**:
+
+```bash
+sudo ./bin/install-runner-systemd.sh --env-file /path/to/.env.runner
+```
+
+This installs `mailpilot-runner.service`, copies env to `/etc/mailpilot/runner.env`, creates a `mailpilot` system user, and stops the optional `mailpilot-runner` container. Full guide: [`../deploy/README.md`](../deploy/README.md).
+
+```bash
+sudo journalctl -u mailpilot-runner -f
+```
 
 ### Development
 
@@ -188,6 +217,14 @@ OAuth **client IDs** (Web application type), redirect URIs, and the `gmail.modif
 2. Generate an API key from the OpenAI dashboard.
 3. Set `OPENAI_API_KEY` in `.env`.
 4. Optionally set `MAILPILOT_OPENAI_MODEL` in `.env` (see table above).
+5. If you want cheaper classifications, lower `MAILPILOT_AI_MAX_BODY_CHARS` first. For very frugal runs, try `MAILPILOT_AI_MAX_BODY_CHARS=0` and rely on sender + subject + snippet only.
+
+### Frugal presets
+
+- **Balanced OpenAI mini:** `MAILPILOT_AI_MAX_SUBJECT_CHARS=200`, `MAILPILOT_AI_MAX_SNIPPET_CHARS=600`, `MAILPILOT_AI_MAX_BODY_CHARS=2000`
+- **Extra-frugal / small 8B style:** `MAILPILOT_AI_MAX_SUBJECT_CHARS=120`, `MAILPILOT_AI_MAX_SNIPPET_CHARS=240`, `MAILPILOT_AI_MAX_BODY_CHARS=0`
+
+The Cloudflare variables are included now so you have a stable place to keep them, but the runner still uses the OpenAI-backed classifier today. When Cloudflare provider routing is added later, you will not need to rename those env vars.
 
 ### CLI reference
 
@@ -245,7 +282,7 @@ mailpilot run --dry-run
 
 #### `supabase-check`
 
-Verifies `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` and that core tables are reachable. Does not require `OPENAI_API_KEY`.
+Verifies `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` and that core tables are reachable. Does not require an OpenAI API key.
 
 ```bash
 python -m mailpilot.main supabase-check
@@ -325,7 +362,7 @@ If `mailpilot` is on the cron user’s PATH:
 ### Troubleshooting
 
 - **Missing OpenAI API key**  
-  Commands that load full config (`run`, `run-once`, `summarize`, `history`, …) require `OPENAI_API_KEY`. MailPilot shows a styled error panel with steps to add the key to `.env`.
+  Commands that load full config (`run`, `run-once`, `summarize`, `history`, …) require `OPENAI_API_KEY`. MailPilot shows a styled error panel if it is missing.
 
 - **Gmail not linked**  
   If there are no rows in `accounts`, connect Gmail from the MailPilot web app first.

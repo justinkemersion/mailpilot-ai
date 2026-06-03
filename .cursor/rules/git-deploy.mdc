@@ -1,0 +1,10 @@
+---
+description: Deploy only via git; never rsync/scp application source
+alwaysApply: true
+---
+
+Follow [`_contract/deploy.md`](../_contract/deploy.md).
+
+- Ship code with **commit → push → `git pull` on the server**, then documented install steps (`deploy/README.md`).
+- **Never** use `rsync` / `scp` to sync application source unless the user documents a one-off emergency exception.
+- **Allowed:** `scp` / install for secret env files only (`.env.docker`, `/etc/mailpilot/runner.env`), not as a substitute for pulling code.

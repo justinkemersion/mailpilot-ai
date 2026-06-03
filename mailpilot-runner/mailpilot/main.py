@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -17,19 +18,28 @@ def _configure_logging(config: MailPilotConfig) -> None:
         format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
     )
 
-    # Also log to rotating file under data/logs
+    # Optional rotating file log (journald is enough under systemd).
     root_dir = Path(__file__).resolve().parent.parent
-    log_dir = root_dir / "data" / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    file_handler = RotatingFileHandler(
-        log_dir / "mailpilot.log",
-        maxBytes=5 * 1024 * 1024,
-        backupCount=3,
-    )
-    file_handler.setFormatter(
-        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s")
-    )
-    logging.getLogger().addHandler(file_handler)
+    candidates: list[Path] = []
+    env_log_dir = (os.getenv("MAILPILOT_LOG_DIR") or "").strip()
+    if env_log_dir:
+        candidates.append(Path(env_log_dir))
+    candidates.extend([Path("/var/log/mailpilot"), root_dir / "data" / "logs"])
+
+    log_format = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s")
+    for log_dir in candidates:
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            file_handler = RotatingFileHandler(
+                log_dir / "mailpilot.log",
+                maxBytes=5 * 1024 * 1024,
+                backupCount=3,
+            )
+            file_handler.setFormatter(log_format)
+            logging.getLogger().addHandler(file_handler)
+            break
+        except OSError:
+            continue
 
 
 def main() -> None:

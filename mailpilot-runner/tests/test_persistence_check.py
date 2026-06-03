@@ -1,4 +1,4 @@
-"""Tests for Supabase connectivity helper (mocked)."""
+"""Tests for database connectivity helper (mocked)."""
 
 from unittest.mock import MagicMock, patch
 
@@ -9,8 +9,8 @@ def test_check_supabase_connection_ok():
     mock_client = MagicMock()
     mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value.data = []
 
-    with patch("mailpilot.persistence.load_supabase_credentials", return_value=("http://x", "key")):
-        with patch("mailpilot.persistence.create_client", return_value=mock_client):
+    with patch("mailpilot.persistence.flux_configured", return_value=False):
+        with patch("mailpilot.persistence.create_db_client", return_value=mock_client):
             ok, msg = check_supabase_connection()
 
     assert ok is True
@@ -18,11 +18,14 @@ def test_check_supabase_connection_ok():
 
 
 def test_check_supabase_connection_missing_env():
-    with patch(
-        "mailpilot.persistence.load_supabase_credentials",
-        side_effect=RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required"),
-    ):
-        ok, msg = check_supabase_connection()
+    with patch("mailpilot.persistence.flux_configured", return_value=False):
+        with patch(
+            "mailpilot.persistence.create_db_client",
+            side_effect=RuntimeError(
+                "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required but not set"
+            ),
+        ):
+            ok, msg = check_supabase_connection()
 
     assert ok is False
     assert "SUPABASE" in msg

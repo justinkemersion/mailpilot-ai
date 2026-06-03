@@ -84,10 +84,29 @@ class InMemoryProcessedEmailRepository:
         self._user_id = user_id
         self._rows: dict[tuple[int, str], ProcessedEmail] = {}
         self._by_id: dict[int, ProcessedEmail] = {}
+        self._claims: set[tuple[int, str]] = set()
         self._next_id = 1
 
     def is_processed(self, account_id: int, gmail_message_id: str) -> bool:
         return (account_id, gmail_message_id) in self._rows
+
+    def try_claim_processing(
+        self,
+        *,
+        user_id: str,
+        account_id: int,
+        gmail_message_id: str,
+        ttl_seconds: int = 1800,
+    ) -> bool:
+        del user_id, ttl_seconds
+        key = (account_id, gmail_message_id)
+        if key in self._claims:
+            return False
+        self._claims.add(key)
+        return True
+
+    def release_processing_claim(self, account_id: int, gmail_message_id: str) -> None:
+        self._claims.discard((account_id, gmail_message_id))
 
     def mark_processed(
         self,

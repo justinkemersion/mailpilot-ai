@@ -81,7 +81,8 @@ This is a **decoupled “control plane / data plane”** shape: the browser trig
 
 Open the **repository root** in your IDE so both packages appear in one workspace.
 
-- **Runner** — Python venv, `SUPABASE_*`, `OPENAI_API_KEY`, and CLI commands: [`mailpilot-runner/README.md`](mailpilot-runner/README.md). For dashboard-triggered runs, use **`watch-jobs`** alongside the web app.
+- **Runner** — Python venv, Flux/Supabase + `OPENAI_API_KEY`, and CLI commands: [`mailpilot-runner/README.md`](mailpilot-runner/README.md). For dashboard-triggered runs, use **`watch-jobs`** alongside the web app.
+- **Production runner (systemd)** — [`deploy/README.md`](deploy/README.md) and `./bin/install-runner-systemd.sh` install `mailpilot-runner.service` on a VPS (web stays in Docker).
 - **Web app** — From `mailpilot-web`: copy `.env.local.example` → `.env.local`, `npm install`, `npm run dev`. Details: [`mailpilot-web/README.md`](mailpilot-web/README.md).
 - **Quick start scripts** — From the repo root, use `bin/bootstrap.sh` for first-time setup, then `bin/dev-web.sh`, `bin/dev-runner.sh`, or `bin/dev-stack.sh` to launch the documented local workflow without retyping commands. The dev scripts fail fast if the expected env files, Node install, or runner venv are missing.
 

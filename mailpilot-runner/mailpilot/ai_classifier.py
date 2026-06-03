@@ -2,12 +2,24 @@ from __future__ import annotations
 
 import json
 import logging
+import random
+import time
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, cast
 
 from openai import OpenAI
 
-from .config import get_archive_security_noise, get_openai_model_name, load_config
+from .config import (
+    get_ai_max_body_chars,
+    get_ai_max_snippet_chars,
+    get_ai_max_subject_chars,
+    get_archive_security_noise,
+    get_classification_delay_ms,
+    get_openai_max_retries,
+    get_openai_model_name,
+    get_openai_retry_base_ms,
+    load_config,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -48,6 +60,34 @@ class ClassificationError(Exception):
     Raised when the classifier cannot safely determine a category
     (e.g. API timeout, malformed response).
     """
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    if status_code == 429:
+        return True
+    return exc.__class__.__name__ == "RateLimitError"
+
+
+def _retry_after_seconds(exc: Exception) -> float | None:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if not headers:
+        return None
+    raw = headers.get("retry-after") or headers.get("Retry-After")
+    if raw in (None, ""):
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _trim_field(value: str | None, limit: int) -> str | None:
+    if limit <= 0:
+        return None
+    trimmed = (value or "")[:limit].strip()
+    return trimmed or None
 
 
 SYSTEM_PROMPT = """
@@ -110,43 +150,43 @@ class OpenAIClassifier:
         Optionally accept a preconfigured OpenAI client (useful for testing).
         """
         self._model = get_openai_model_name()
+        self._min_delay_seconds = max(0, get_classification_delay_ms()) / 1000.0
+        self._max_retries = max(0, get_openai_max_retries())
+        self._retry_base_seconds = max(0, get_openai_retry_base_ms()) / 1000.0
+        self._max_subject_chars = max(0, get_ai_max_subject_chars())
+        self._max_snippet_chars = max(0, get_ai_max_snippet_chars())
+        self._max_body_chars = max(0, get_ai_max_body_chars())
+        self._next_request_not_before = 0.0
         if client is not None:
             self._client = client
         else:
             config = load_config()
-            self._client = OpenAI(api_key=config.openai_api_key)
+            self._client = OpenAI(api_key=config.openai_api_key, max_retries=0)
 
-    def classify(
-        self,
-        subject: str | None,
-        sender: str | None,
-        body: str | None,
-        snippet: str | None,
-    ) -> ClassifiedEmail:
-        content = {
-            "subject": subject or "",
-            "sender": sender or "",
-            "body": (body or "")[:8000],
-            "snippet": snippet or "",
-        }
+    def _sleep_before_request(self) -> None:
+        if self._min_delay_seconds <= 0:
+            return
+        now = time.monotonic()
+        if self._next_request_not_before > now:
+            time.sleep(self._next_request_not_before - now)
+        self._next_request_not_before = time.monotonic() + self._min_delay_seconds
 
-        user_input = (
-            "Classify the following email into one category.\n\n"
-            + json.dumps(content, ensure_ascii=False, indent=2)
-        )
+    def _request_text(self, user_input: str) -> str:
+        attempt = 0
+        while True:
+            self._sleep_before_request()
+            try:
+                # Branch for test/dummy clients that expose the legacy .responses surface.
+                if hasattr(self._client, "responses"):
+                    response = self._client.responses.create(
+                        model=self._model,
+                        instructions=SYSTEM_PROMPT.strip(),
+                        input=user_input,
+                    )
+                    # OpenAI response stubs use a wide output union; runtime shape is fixed for this call.
+                    resp: Any = response
+                    return resp.output[0].content[0].text
 
-        try:
-            # Branch for test/dummy clients that expose the legacy .responses surface.
-            if hasattr(self._client, "responses"):
-                response = self._client.responses.create(
-                    model=self._model,
-                    instructions=SYSTEM_PROMPT.strip(),
-                    input=user_input,
-                )
-                # OpenAI response stubs use a wide output union; runtime shape is fixed for this call.
-                resp: Any = response
-                text = resp.output[0].content[0].text
-            else:
                 chat = self._client.chat.completions.create(
                     model=self._model,
                     messages=[
@@ -155,10 +195,59 @@ class OpenAIClassifier:
                     ],
                     temperature=0,
                 )
-                text = chat.choices[0].message.content or ""
-        except Exception as exc:  # network or API error
-            logger.error("OpenAI classification failed: %s", exc)
-            raise ClassificationError("OpenAI classification failed") from exc
+                return chat.choices[0].message.content or ""
+            except Exception as exc:  # network or API error
+                if not _is_rate_limit_error(exc) or attempt >= self._max_retries:
+                    logger.error("OpenAI classification failed: %s", exc)
+                    raise ClassificationError("OpenAI classification failed") from exc
+
+                retry_after = _retry_after_seconds(exc)
+                backoff_seconds = (
+                    retry_after
+                    if retry_after is not None
+                    else self._retry_base_seconds * (2**attempt)
+                )
+                jitter_seconds = backoff_seconds * 0.15 * random.random()
+                sleep_for = max(self._min_delay_seconds, backoff_seconds + jitter_seconds)
+                logger.warning(
+                    "OpenAI rate limited; retrying in %.2fs (attempt %s/%s)",
+                    sleep_for,
+                    attempt + 1,
+                    self._max_retries,
+                )
+                time.sleep(sleep_for)
+                attempt += 1
+
+    def classify(
+        self,
+        subject: str | None,
+        sender: str | None,
+        body: str | None,
+        snippet: str | None,
+    ) -> ClassifiedEmail:
+        content: dict[str, str] = {}
+        subject_text = _trim_field(subject, self._max_subject_chars)
+        if subject_text is not None:
+            content["subject"] = subject_text
+
+        sender_text = (sender or "").strip()
+        if sender_text:
+            content["sender"] = sender_text
+
+        snippet_text = _trim_field(snippet, self._max_snippet_chars)
+        if snippet_text is not None:
+            content["snippet"] = snippet_text
+
+        body_text = _trim_field(body, self._max_body_chars)
+        if body_text is not None:
+            content["body"] = body_text
+
+        user_input = (
+            "Classify the following email into one category.\n\n"
+            + json.dumps(content, ensure_ascii=False, indent=2)
+        )
+
+        text = self._request_text(user_input)
 
         try:
             payload = json.loads(text)

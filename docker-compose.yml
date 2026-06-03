@@ -31,7 +31,9 @@ services:
       retries: 3
       start_period: 30s
 
+  # Optional containerized worker — production uses systemd (see deploy/README.md).
   runner:
+    profiles: ["docker-runner"]
     build:
       context: ./mailpilot-runner
       dockerfile: Dockerfile

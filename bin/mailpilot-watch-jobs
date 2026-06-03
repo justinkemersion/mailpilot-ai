@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Long-running worker entrypoint for systemd (and manual use).
+set -euo pipefail
+
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+RUNNER_DIR="$ROOT_DIR/mailpilot-runner"
+PYTHON_BIN="$RUNNER_DIR/.venv/bin/python"
+
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  printf 'Missing runner venv at %s\n' "$PYTHON_BIN" >&2
+  printf 'Run: %s/bin/install-runner-systemd.sh (or bootstrap.sh) first.\n' "$ROOT_DIR" >&2
+  exit 1
+fi
+
+cd "$RUNNER_DIR"
+exec "$PYTHON_BIN" -m mailpilot.main watch-jobs "$@"

@@ -21,6 +21,17 @@ class DummyClassifier:
         return DummyClassification(category=self._category)
 
 
+class CountingClassifier:
+    def __init__(self, category: str = "personal") -> None:
+        self._category = category
+        self.calls = 0
+
+    def classify(self, subject, sender, body, snippet):
+        del subject, sender, body, snippet
+        self.calls += 1
+        return DummyClassification(category=self._category)
+
+
 class RecordingGmailClient:
     def __init__(self) -> None:
         self.archived = []
@@ -101,6 +112,9 @@ def test_rate_limiting_archives_for_many_promotions(monkeypatch):
     """
     Verify that archive actions are capped per run for many promotion emails.
     """
+    monkeypatch.setenv("MAILPILOT_MAX_CLASSIFICATIONS_PER_RUN", "200")
+    monkeypatch.setenv("MAILPILOT_MAX_CLASSIFICATIONS_PER_ACCOUNT", "200")
+
     acc_repo = InMemoryAccountRepository()
     acc_repo.add(email="user@example.com", token_json="{}")
     proc_repo = InMemoryProcessedEmailRepository()
@@ -165,3 +179,168 @@ def test_rate_limiting_archives_for_many_promotions(monkeypatch):
     processor.process_all_accounts_once()
 
     assert len(gmail.archived) == 30
+
+
+def test_llm_budget_caps_calls_per_run(monkeypatch):
+    acc_repo = InMemoryAccountRepository()
+    acc_repo.add(email="user@example.com", token_json="{}")
+    proc_repo = InMemoryProcessedEmailRepository()
+    _patch_repos(monkeypatch, acc_repo, proc_repo)
+
+    monkeypatch.setenv("MAILPILOT_MAX_CLASSIFICATIONS_PER_RUN", "2")
+    monkeypatch.setenv("MAILPILOT_MAX_CLASSIFICATIONS_PER_ACCOUNT", "10")
+    monkeypatch.setenv("MAILPILOT_DRY_RUN_MAX_CLASSIFICATIONS", "10")
+
+    class NeutralGmailClient:
+        def ensure_labels(self, account):
+            return {"personal": "LBL_PERSONAL"}
+
+        def list_messages(self, account, label_ids=None, query=None, max_results=100):
+            return ["m1", "m2", "m3"]
+
+        def get_message(self, account, message_id):
+            @dataclass
+            class M:
+                id: str
+                thread_id: str | None
+                subject: str | None
+                sender: str | None
+                snippet: str | None
+                body: str | None
+                labels: list[str]
+
+            return M(
+                id=message_id,
+                thread_id=None,
+                subject=f"Hello {message_id}",
+                sender="person@example.com",
+                snippet="Checking in",
+                body="Can we chat later today?",
+                labels=["INBOX"],
+            )
+
+        def apply_labels(self, account, message_id, labels_to_add=None, labels_to_remove=None):
+            return None
+
+        def archive_message(self, account, message_id):
+            return None
+
+        def flag_important(self, account, message_id):
+            return None
+
+    classifier = CountingClassifier()
+    processor = EmailProcessor(gmail_client=NeutralGmailClient(), classifier=classifier)
+
+    result = processor.process_all_accounts_once()
+
+    assert classifier.calls == 2
+    assert result.llm_calls == 2
+    assert result.processed == 2
+    assert result.skipped_by_budget == 1
+
+
+def test_rule_based_shortcuts_skip_llm(monkeypatch):
+    acc_repo = InMemoryAccountRepository()
+    acc_repo.add(email="user@example.com", token_json="{}")
+    proc_repo = InMemoryProcessedEmailRepository()
+    _patch_repos(monkeypatch, acc_repo, proc_repo)
+
+    class ShortcutGmailClient:
+        def ensure_labels(self, account):
+            return {"receipts": "LBL_RECEIPTS", "promotions": "LBL_PROMOS"}
+
+        def list_messages(self, account, label_ids=None, query=None, max_results=100):
+            return ["receipt-1", "promo-1"]
+
+        def get_message(self, account, message_id):
+            @dataclass
+            class M:
+                id: str
+                thread_id: str | None
+                subject: str | None
+                sender: str | None
+                snippet: str | None
+                body: str | None
+                labels: list[str]
+
+            if message_id == "receipt-1":
+                return M(
+                    id=message_id,
+                    thread_id=None,
+                    subject="Order confirmation",
+                    sender="no-reply@shop.example",
+                    snippet="Your order is confirmed",
+                    body="Order number 12345. Payment method Visa.",
+                    labels=["INBOX"],
+                )
+
+            return M(
+                id=message_id,
+                thread_id=None,
+                subject="Huge sale ends tonight",
+                sender="deals@example.com",
+                snippet="Unsubscribe any time",
+                body="Special offer. Shop now and manage preferences.",
+                labels=["INBOX"],
+            )
+
+        def apply_labels(self, account, message_id, labels_to_add=None, labels_to_remove=None):
+            return None
+
+        def archive_message(self, account, message_id):
+            return None
+
+        def flag_important(self, account, message_id):
+            return None
+
+    classifier = CountingClassifier()
+    processor = EmailProcessor(gmail_client=ShortcutGmailClient(), classifier=classifier)
+
+    result = processor.process_all_accounts_once()
+
+    assert classifier.calls == 0
+    assert result.llm_calls == 0
+    assert result.prefiltered == 2
+    assert result.processed == 2
+
+
+def test_processing_claim_conflict_skips_message(monkeypatch):
+    acc_repo = InMemoryAccountRepository()
+    account = acc_repo.add(email="user@example.com", token_json="{}")
+    proc_repo = InMemoryProcessedEmailRepository()
+    _patch_repos(monkeypatch, acc_repo, proc_repo)
+
+    class OneMessageGmailClient:
+        def ensure_labels(self, account):
+            return {}
+
+        def list_messages(self, account, label_ids=None, query=None, max_results=100):
+            return ["m1"]
+
+        def get_message(self, account, message_id):
+            raise AssertionError("message fetch should be skipped when claim already exists")
+
+        def apply_labels(self, account, message_id, labels_to_add=None, labels_to_remove=None):
+            return None
+
+        def archive_message(self, account, message_id):
+            return None
+
+        def flag_important(self, account, message_id):
+            return None
+
+    claimed = proc_repo.try_claim_processing(
+        user_id=account.user_id,
+        account_id=account.id,
+        gmail_message_id="m1",
+    )
+    assert claimed is True
+
+    classifier = CountingClassifier()
+    processor = EmailProcessor(gmail_client=OneMessageGmailClient(), classifier=classifier)
+
+    result = processor.process_all_accounts_once()
+
+    assert classifier.calls == 0
+    assert result.skipped_by_claim_conflict == 1
+    assert result.processed == 0

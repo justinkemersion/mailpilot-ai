@@ -23,7 +23,7 @@ def render_config_error(exc: RuntimeError) -> bool:
     """
     message = str(exc)
 
-    if "OPENAI_API_KEY is required" in message:
+    if "OPENAI API key" in message or "OPENAI_API_KEY is required" in message:
         _render_openai_api_key_error()
         return True
 
