@@ -1,5 +1,6 @@
 import type { NextAuthOptions } from "next-auth";
 import GitHubProvider from "next-auth/providers/github";
+import GoogleProvider from "next-auth/providers/google";
 
 function optionalEnv(name: string): string {
   return process.env[name]?.trim() ?? "";
@@ -14,11 +15,15 @@ export const authOptions: NextAuthOptions = {
       clientId: optionalEnv("AUTH_GITHUB_ID"),
       clientSecret: optionalEnv("AUTH_GITHUB_SECRET"),
     }),
+    GoogleProvider({
+      clientId: optionalEnv("GOOGLE_CLIENT_ID"),
+      clientSecret: optionalEnv("GOOGLE_CLIENT_SECRET"),
+    }),
   ],
   callbacks: {
     async jwt({ token, account }) {
-      if (account?.providerAccountId) {
-        token.mailpilotUserId = `github:${account.providerAccountId}`;
+      if (account?.provider && account.providerAccountId) {
+        token.mailpilotUserId = `${account.provider}:${account.providerAccountId}`;
       }
       return token;
     },
