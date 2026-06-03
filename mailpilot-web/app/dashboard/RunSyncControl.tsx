@@ -4,7 +4,8 @@ import type {
   RunJobProgress,
   RunJobRow,
 } from "@/app/api/run/route";
-import { Loader2, RefreshCw, X } from "lucide-react";
+import { classifierLabel } from "@/lib/formatClassifier";
+import { Cpu, Loader2, RefreshCw, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -24,6 +25,71 @@ const DEFAULT_OPTIONS: RunOptions = {
 
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 const STATUS_FALLBACK_POLL_SCHEDULE_MS = [5000, 10000, 15000] as const;
+
+function classifierLabelFromJob(job: RunJobRow | null): string | null {
+  if (!job) return null;
+  const fromResult = classifierLabel(job.result);
+  if (fromResult) return fromResult;
+  if (job.progress?.phase === "classifier") {
+    return (
+      job.progress.message.replace(/^AI classifier:\s*/i, "").trim() ||
+      classifierLabel(job.result)
+    );
+  }
+  return null;
+}
+
+function classifierLabelFromActivity(entries: RunJobProgress[]): string | null {
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const entry = entries[i];
+    if (entry.phase === "classifier") {
+      return entry.message.replace(/^AI classifier:\s*/i, "").trim() || null;
+    }
+  }
+  return null;
+}
+
+function ClassifierSourceBadge({
+  label,
+  pending = false,
+  lastRun = false,
+}: {
+  label: string;
+  pending?: boolean;
+  lastRun?: boolean;
+}) {
+  return (
+    <div
+      className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-indigo-200 bg-indigo-50/90 px-3 py-2 dark:border-indigo-900/80 dark:bg-indigo-950/40"
+      aria-label={`AI classifier: ${label}`}
+    >
+      <div className="flex min-w-0 items-center gap-1.5">
+        {pending ? (
+          <Loader2
+            className="h-3.5 w-3.5 shrink-0 animate-spin text-indigo-600 dark:text-indigo-400"
+            aria-hidden
+          />
+        ) : (
+          <Cpu
+            className="h-3.5 w-3.5 shrink-0 text-indigo-600 dark:text-indigo-400"
+            aria-hidden
+          />
+        )}
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+          AI classifier
+        </span>
+      </div>
+      <span className="min-w-0 text-xs font-medium text-indigo-950 dark:text-indigo-100">
+        {label}
+      </span>
+      {lastRun && (
+        <span className="text-[10px] text-indigo-600/80 dark:text-indigo-400/90">
+          last run
+        </span>
+      )}
+    </div>
+  );
+}
 
 async function fetchRunJobRow(jobId: number): Promise<RunJobRow | null> {
   const res = await fetch(`/api/run?job_id=${jobId}`);
@@ -84,6 +150,11 @@ function ResultSummary({ job }: { job: RunJobRow | null }) {
           LLM calls: {r.llm_calls ?? 0}, rule-based: {r.prefiltered ?? 0}, skipped by budget:{" "}
           {r.skipped_by_budget ?? 0}.
         </p>
+        {classifierLabel(r) && (
+          <p className="mt-1 text-xs font-medium text-green-800 dark:text-green-300">
+            AI classifier: {classifierLabel(r)}
+          </p>
+        )}
       </div>
     );
   }
@@ -293,6 +364,12 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
   const isActive = currentStatus === "pending" || currentStatus === "running";
   const isFinished = job?.status === "done" || job?.status === "failed";
 
+  const classifierLabelActive =
+    classifierLabelFromActivity(activityLog) ??
+    (isActive ? classifierLabelFromJob(job) : null);
+  const classifierLabelLastRun =
+    !isActive && !classifierLabelActive ? classifierLabelFromJob(job) : null;
+
   const isSection = variant === "section";
   const buttonClass = isSection
     ? "inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[9rem] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
@@ -318,7 +395,7 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
             <code className="rounded bg-zinc-100 px-1 text-[10px] dark:bg-zinc-800">
               watch-jobs
             </code>
-            ).
+            ). Classifier is configured on the server and reported per run.
           </p>
         </div>
         <button
@@ -439,6 +516,16 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
       <div
         className={`flex min-w-0 flex-col gap-3${isSection ? " border-t border-zinc-100 pt-3 dark:border-zinc-800" : ""}`}
       >
+        {classifierLabelActive ? (
+          <ClassifierSourceBadge label={classifierLabelActive} pending={isActive} />
+        ) : classifierLabelLastRun ? (
+          <ClassifierSourceBadge label={classifierLabelLastRun} lastRun />
+        ) : isSection ? (
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            AI classifier (Cloudflare or OpenAI) is chosen on the worker — run a sync to
+            see which model was used.
+          </p>
+        ) : null}
         <StatusIndicator status={currentStatus} />
         {timedOut && (
           <p className="text-xs text-yellow-700 dark:text-yellow-400">

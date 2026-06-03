@@ -32,6 +32,8 @@ def _echo_run_summary(result: RunResult | None) -> None:
         f"{result.candidates} message(s) in inbox, {result.processed} processed. "
         f"{prefix}Labels: {result.labels_applied}, archived: {result.archived}, spam: {result.spam_marked}."
     )
+    if result.ai_label:
+        typer.echo(f"AI classifier: {result.ai_label}")
     if result.accounts_needing_reauth:
         emails = ", ".join(result.accounts_needing_reauth)
         typer.secho(

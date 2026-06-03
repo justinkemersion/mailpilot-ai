@@ -199,6 +199,29 @@ def validate_classifier_config() -> None:
     )
 
 
+def get_classifier_info() -> dict[str, str]:
+    """
+    Return provider, model id, and a human-readable label for UI/CLI output.
+
+    Keys: ai_provider, ai_model, ai_label.
+    """
+    provider = get_ai_provider()
+    if provider == "cloudflare":
+        model = get_cloudflare_model_name()
+        short = model.removeprefix("@cf/meta/").replace("-", " ")
+        return {
+            "ai_provider": "cloudflare",
+            "ai_model": model,
+            "ai_label": f"Cloudflare Workers AI · {short}",
+        }
+    model = get_openai_model_name()
+    return {
+        "ai_provider": "openai",
+        "ai_model": model,
+        "ai_label": f"OpenAI · {model}",
+    }
+
+
 def get_ai_max_subject_chars() -> int:
     """
     Return the maximum subject characters included in an LLM request.

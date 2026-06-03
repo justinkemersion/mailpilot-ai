@@ -16,6 +16,7 @@ from .ai_classifier import (
 )
 from .config import (
     get_archive_receipts,
+    get_classifier_info,
     get_gmail_max_messages_per_account,
     get_max_archives_per_run,
     get_max_classifications_per_account,
@@ -164,6 +165,9 @@ class RunResult:
     skipped_by_budget: int = 0
     skipped_by_claim_conflict: int = 0
     accounts_needing_reauth: list[str] = field(default_factory=list)
+    ai_provider: str = ""
+    ai_model: str = ""
+    ai_label: str = ""
 
 
 class EmailProcessor:
@@ -216,6 +220,12 @@ class EmailProcessor:
         self._account_budget_hits_reported: set[str] = set()
         self._run_job_id = run_job_id
         self._run_job_repo = run_job_repo
+        classifier_info = get_classifier_info()
+        self._ai_provider = classifier_info["ai_provider"]
+        self._ai_model = classifier_info["ai_model"]
+        self._ai_label = classifier_info["ai_label"]
+        if run_job_id is not None and run_job_repo is not None:
+            self._report_progress("classifier", f"AI classifier: {self._ai_label}")
 
     def _report_progress(self, phase: str, message: str) -> None:
         if self._run_job_id is None or self._run_job_repo is None:
@@ -373,6 +383,9 @@ class EmailProcessor:
                     skipped_by_budget=0,
                     skipped_by_claim_conflict=0,
                     accounts_needing_reauth=[],
+                    ai_provider=self._ai_provider,
+                    ai_model=self._ai_model,
+                    ai_label=self._ai_label,
                 )
 
             self._report_progress(
@@ -400,6 +413,9 @@ class EmailProcessor:
             skipped_by_budget=self._skipped_by_budget_this_run,
             skipped_by_claim_conflict=self._skipped_by_claim_conflict_this_run,
             accounts_needing_reauth=list(self._accounts_needing_reauth),
+            ai_provider=self._ai_provider,
+            ai_model=self._ai_model,
+            ai_label=self._ai_label,
         )
 
     def _process_account(

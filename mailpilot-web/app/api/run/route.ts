@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/auth/session";
 import { fluxFetch, fluxJson, postgrestParams } from "@/lib/flux/client";
+import type { ClassifierInfo } from "@/lib/formatClassifier";
 import { NextResponse } from "next/server";
 
 const RUN_JOB_SELECT =
@@ -15,7 +16,7 @@ export interface RunJobRow {
   id: number;
   status: "pending" | "running" | "done" | "failed";
   options: Record<string, unknown>;
-  result: {
+  result: ({
     accounts_processed?: number;
     candidates?: number;
     processed?: number;
@@ -27,7 +28,7 @@ export interface RunJobRow {
     prefiltered?: number;
     skipped_by_budget?: number;
     skipped_by_claim_conflict?: number;
-  } | null;
+  } & ClassifierInfo) | null;
   error: string | null;
   progress: RunJobProgress | null;
   created_at: string;

@@ -89,6 +89,9 @@ def _run_result_to_dict(result: RunResult) -> dict[str, Any]:
         "prefiltered": result.prefiltered,
         "skipped_by_budget": result.skipped_by_budget,
         "skipped_by_claim_conflict": result.skipped_by_claim_conflict,
+        "ai_provider": result.ai_provider,
+        "ai_model": result.ai_model,
+        "ai_label": result.ai_label,
     }
 
 

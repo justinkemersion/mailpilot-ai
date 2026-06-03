@@ -71,11 +71,24 @@ Environment is loaded from `/etc/mailpilot/runner.env` when run under systemd.
 
 ```bash
 cd /srv/apps/mailpilot-ai-git   # or your checkout path
-git pull origin main
-sudo ./bin/install-runner-systemd.sh --env-file /etc/mailpilot/runner.env
+sudo ./bin/deploy-production.sh
 ```
 
-Reinstall refreshes the venv and restarts the service. Rebuild web if needed: `docker compose --env-file .env.docker up -d --build web`.
+Or from your laptop (SSH defaults match Flux `bin/sync-env-remote.sh`):
+
+```bash
+./bin/deploy-production.sh --remote
+```
+
+This pulls `main`, rebuilds the **web** container, refreshes the runner venv via `install-runner-systemd.sh`, and restarts `mailpilot-runner`. Skip steps with `MAILPILOT_SKIP_WEB=1` or `MAILPILOT_SKIP_RUNNER=1`.
+
+Manual equivalent:
+
+```bash
+git pull origin main
+sudo ./bin/install-runner-systemd.sh --env-file /etc/mailpilot/runner.env
+docker compose --env-file .env.docker up -d --build web
+```
 
 ## Docker runner (optional)
 
