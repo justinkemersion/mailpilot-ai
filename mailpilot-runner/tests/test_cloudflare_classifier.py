@@ -4,6 +4,7 @@ import pytest
 import requests
 
 from mailpilot.ai_classifier import (
+    AiLimitExceededError,
     CloudflareClassifier,
     ClassificationError,
     create_classifier,
@@ -156,6 +157,63 @@ def test_cloudflare_classifier_retries_rate_limits(monkeypatch):
     assert result.category == "promotions"
     assert session.calls == 2
     assert len(sleeps) == 1
+
+
+def test_cloudflare_raises_ai_limit_when_rate_limit_retries_exhausted(monkeypatch):
+    monkeypatch.setenv("MAILPILOT_CLASSIFICATION_DELAY_MS", "0")
+    monkeypatch.setenv("MAILPILOT_OPENAI_MAX_RETRIES", "0")
+
+    session = DummySession(
+        [
+            (429, {"success": False, "errors": [{"message": "rate limited"}]}),
+        ]
+    )
+    classifier = CloudflareClassifier(
+        run_url="https://example.test/ai/run/model",
+        api_token="cf-token",
+        session=session,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(AiLimitExceededError) as exc_info:
+        classifier.classify(
+            subject="Sale",
+            sender="shop@example.com",
+            body="Shop now",
+            snippet="Shop now",
+        )
+
+    assert exc_info.value.provider == "cloudflare"
+    assert "Cloudflare" in str(exc_info.value)
+
+
+def test_cloudflare_raises_ai_limit_on_neuron_quota_message(monkeypatch):
+    monkeypatch.setenv("MAILPILOT_CLASSIFICATION_DELAY_MS", "0")
+    monkeypatch.setenv("MAILPILOT_OPENAI_MAX_RETRIES", "0")
+
+    session = DummySession(
+        [
+            (
+                200,
+                {
+                    "success": False,
+                    "errors": [{"message": "Daily neuron limit exceeded"}],
+                },
+            ),
+        ]
+    )
+    classifier = CloudflareClassifier(
+        run_url="https://example.test/ai/run/model",
+        api_token="cf-token",
+        session=session,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(AiLimitExceededError):
+        classifier.classify(
+            subject="Sale",
+            sender="shop@example.com",
+            body="Shop now",
+            snippet="Shop now",
+        )
 
 
 def test_create_classifier_selects_cloudflare(monkeypatch):

@@ -28,6 +28,9 @@ export interface RunJobRow {
     prefiltered?: number;
     skipped_by_budget?: number;
     skipped_by_claim_conflict?: number;
+    skipped_by_ai_limit?: number;
+    ai_limit_hit?: boolean;
+    ai_limit_message?: string | null;
   } & ClassifierInfo) | null;
   error: string | null;
   progress: RunJobProgress | null;

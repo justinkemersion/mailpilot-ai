@@ -103,11 +103,54 @@ class ClassificationError(Exception):
     """
 
 
+class AiLimitExceededError(ClassificationError):
+    """Provider rate or usage limit reached; classification cannot continue."""
+
+    def __init__(self, message: str, *, provider: str = "") -> None:
+        super().__init__(message)
+        self.provider = provider
+
+
+def ai_limit_user_message(provider: str) -> str:
+    labels = {
+        "openai": "OpenAI",
+        "cloudflare": "Cloudflare Workers AI",
+    }
+    name = labels.get(provider, "Your AI provider")
+    return (
+        f"{name} rate or usage limit reached. "
+        "MailPilot stopped classifying new messages for this run — try again later "
+        "or switch providers in runner settings."
+    )
+
+
+_QUOTA_HINTS = (
+    "rate limit",
+    "too many requests",
+    "quota",
+    "neuron",
+    "limit exceeded",
+    "insufficient_quota",
+    "exceeded your current quota",
+)
+
+
+def _looks_like_ai_limit_message(text: str) -> bool:
+    lower = text.lower()
+    return any(h in lower for h in _QUOTA_HINTS)
+
+
 def _is_rate_limit_error(exc: Exception) -> bool:
     status_code = getattr(exc, "status_code", None)
     if status_code == 429:
         return True
     return exc.__class__.__name__ == "RateLimitError"
+
+
+def _is_ai_limit_error(exc: Exception) -> bool:
+    if _is_rate_limit_error(exc):
+        return True
+    return _looks_like_ai_limit_message(str(exc))
 
 
 def _retry_after_seconds(exc: Exception) -> float | None:
@@ -383,12 +426,18 @@ class OpenAIClassifier(_RetryThrottleMixin):
                 )
                 return chat.choices[0].message.content or ""
             except Exception as exc:  # network or API error
-                if not _is_rate_limit_error(exc) or attempt >= self._max_retries:
-                    logger.error("OpenAI classification failed: %s", exc)
-                    raise ClassificationError("OpenAI classification failed") from exc
+                if _is_ai_limit_error(exc):
+                    if _is_rate_limit_error(exc) and attempt < self._max_retries:
+                        self._sleep_for_rate_limit(exc, attempt)
+                        attempt += 1
+                        continue
+                    logger.error("OpenAI AI limit reached: %s", exc)
+                    raise AiLimitExceededError(
+                        ai_limit_user_message("openai"), provider="openai"
+                    ) from exc
 
-                self._sleep_for_rate_limit(exc, attempt)
-                attempt += 1
+                logger.error("OpenAI classification failed: %s", exc)
+                raise ClassificationError("OpenAI classification failed") from exc
 
     def classify(
         self,
@@ -442,6 +491,10 @@ class CloudflareClassifier(_RetryThrottleMixin):
             message = "; ".join(
                 str(err.get("message", err)) for err in errors if err is not None
             )
+            if _looks_like_ai_limit_message(message):
+                raise AiLimitExceededError(
+                    ai_limit_user_message("cloudflare"), provider="cloudflare"
+                )
             raise ClassificationError(
                 message or "Cloudflare Workers AI request failed"
             )
@@ -480,6 +533,8 @@ class CloudflareClassifier(_RetryThrottleMixin):
             self._sleep_before_request()
             try:
                 return self._post(self._request_payload(user_input, use_json_mode=use_json_mode))
+            except AiLimitExceededError:
+                raise
             except ClassificationError as exc:
                 if use_json_mode and "JSON Mode couldn't be met" in str(exc):
                     logger.warning(
@@ -497,6 +552,11 @@ class CloudflareClassifier(_RetryThrottleMixin):
                     self._sleep_for_rate_limit(exc, attempt)
                     attempt += 1
                     continue
+                if status_code == 429:
+                    logger.error("Cloudflare AI limit reached: %s", exc)
+                    raise AiLimitExceededError(
+                        ai_limit_user_message("cloudflare"), provider="cloudflare"
+                    ) from exc
                 logger.error("Cloudflare classification failed: %s", exc)
                 raise ClassificationError("Cloudflare classification failed") from exc
             except Exception as exc:

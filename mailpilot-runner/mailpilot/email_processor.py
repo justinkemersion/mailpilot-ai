@@ -9,6 +9,7 @@ from email.utils import parseaddr
 from typing import Any
 
 from .ai_classifier import (
+    AiLimitExceededError,
     ClassificationError,
     ClassifiedEmail,
     Classifier,
@@ -164,6 +165,9 @@ class RunResult:
     prefiltered: int = 0
     skipped_by_budget: int = 0
     skipped_by_claim_conflict: int = 0
+    skipped_by_ai_limit: int = 0
+    ai_limit_hit: bool = False
+    ai_limit_message: str | None = None
     accounts_needing_reauth: list[str] = field(default_factory=list)
     ai_provider: str = ""
     ai_model: str = ""
@@ -209,6 +213,7 @@ class EmailProcessor:
         self._prefiltered_this_run = 0
         self._skipped_by_budget_this_run = 0
         self._skipped_by_claim_conflict_this_run = 0
+        self._skipped_by_ai_limit_this_run = 0
         self._dry_run = False
         self._search_query = search_query
         self._archive_receipts = get_archive_receipts()
@@ -217,6 +222,8 @@ class EmailProcessor:
         self._safe_senders = set(get_safe_senders())
         self._accounts_needing_reauth: list[str] = []
         self._run_budget_hit = False
+        self._ai_limit_hit = False
+        self._ai_limit_message: str | None = None
         self._account_budget_hits_reported: set[str] = set()
         self._run_job_id = run_job_id
         self._run_job_repo = run_job_repo
@@ -267,7 +274,18 @@ class EmailProcessor:
             self._max_dry_run_classifications,
         )
 
+    def _record_ai_limit_hit(self, exc: AiLimitExceededError) -> None:
+        if self._ai_limit_hit:
+            return
+        self._ai_limit_hit = True
+        self._ai_limit_message = str(exc)
+        logger.warning("AI provider limit reached: %s", exc)
+        self._report_progress("ai_limit", str(exc))
+
     def _classification_budget_scope(self, account: Account, account_calls: int) -> str | None:
+        if self._ai_limit_hit:
+            return "ai_limit"
+
         run_limit = self._effective_run_classification_limit()
         if run_limit >= 0 and self._classifications_this_run >= run_limit:
             if not self._run_budget_hit:
@@ -319,15 +337,24 @@ class EmailProcessor:
 
         budget_scope = self._classification_budget_scope(account, account_calls)
         if budget_scope is not None:
-            self._skipped_by_budget_this_run += 1
+            if budget_scope == "ai_limit":
+                self._skipped_by_ai_limit_this_run += 1
+            else:
+                self._skipped_by_budget_this_run += 1
             return None, account_calls, budget_scope
 
-        classification = self._classifier.classify(
-            subject=msg.subject,
-            sender=msg.sender,
-            body=msg.body,
-            snippet=msg.snippet,
-        )
+        try:
+            classification = self._classifier.classify(
+                subject=msg.subject,
+                sender=msg.sender,
+                body=msg.body,
+                snippet=msg.snippet,
+            )
+        except AiLimitExceededError as exc:
+            self._record_ai_limit_hit(exc)
+            self._skipped_by_ai_limit_this_run += 1
+            return None, account_calls, "ai_limit"
+
         self._classifications_this_run += 1
         return classification, account_calls + 1, None
 
@@ -363,8 +390,11 @@ class EmailProcessor:
         self._prefiltered_this_run = 0
         self._skipped_by_budget_this_run = 0
         self._skipped_by_claim_conflict_this_run = 0
+        self._skipped_by_ai_limit_this_run = 0
         self._accounts_needing_reauth = []
         self._run_budget_hit = False
+        self._ai_limit_hit = False
+        self._ai_limit_message = None
         self._account_budget_hits_reported = set()
         with repository_context() as (account_repo, processed_repo):
             accounts = account_repo.list_active(user_id=user_id)
@@ -382,6 +412,9 @@ class EmailProcessor:
                     prefiltered=0,
                     skipped_by_budget=0,
                     skipped_by_claim_conflict=0,
+                    skipped_by_ai_limit=0,
+                    ai_limit_hit=False,
+                    ai_limit_message=None,
                     accounts_needing_reauth=[],
                     ai_provider=self._ai_provider,
                     ai_model=self._ai_model,
@@ -394,7 +427,8 @@ class EmailProcessor:
             )
 
             for account in accounts:
-                if self._classification_budget_scope(account, 0) == "run":
+                scope = self._classification_budget_scope(account, 0)
+                if scope in ("run", "ai_limit"):
                     break
                 self._process_account(account, processed_repo)
 
@@ -412,6 +446,9 @@ class EmailProcessor:
             prefiltered=self._prefiltered_this_run,
             skipped_by_budget=self._skipped_by_budget_this_run,
             skipped_by_claim_conflict=self._skipped_by_claim_conflict_this_run,
+            skipped_by_ai_limit=self._skipped_by_ai_limit_this_run,
+            ai_limit_hit=self._ai_limit_hit,
+            ai_limit_message=self._ai_limit_message,
             accounts_needing_reauth=list(self._accounts_needing_reauth),
             ai_provider=self._ai_provider,
             ai_model=self._ai_model,

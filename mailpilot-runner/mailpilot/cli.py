@@ -34,6 +34,16 @@ def _echo_run_summary(result: RunResult | None) -> None:
     )
     if result.ai_label:
         typer.echo(f"AI classifier: {result.ai_label}")
+    if result.ai_limit_hit:
+        typer.secho(
+            result.ai_limit_message or "AI provider rate or usage limit reached.",
+            fg=typer.colors.YELLOW,
+        )
+        if result.skipped_by_ai_limit:
+            typer.secho(
+                f"{result.skipped_by_ai_limit} message(s) were not classified because of the limit.",
+                fg=typer.colors.YELLOW,
+            )
     if result.accounts_needing_reauth:
         emails = ", ".join(result.accounts_needing_reauth)
         typer.secho(

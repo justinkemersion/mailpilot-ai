@@ -132,29 +132,54 @@ function ResultSummary({ job }: { job: RunJobRow | null }) {
     const isDry = r.dry_run;
     const prefix = isDry ? "Would have: " : "";
     return (
-      <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 dark:border-green-800 dark:bg-green-950/80">
-        <p className="text-xs font-medium text-green-800 dark:text-green-300">
-          Run complete
-          {isDry && (
-            <span className="ml-1.5 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] dark:bg-green-900">
-              dry run
-            </span>
-          )}
-        </p>
-        <p className="mt-0.5 text-xs text-green-700 dark:text-green-400">
-          {r.accounts_processed ?? 0} account(s) · {r.candidates ?? 0} messages ·{" "}
-          {r.processed ?? 0} processed. {prefix}Labels: {r.labels_applied ?? 0}, archived:{" "}
-          {r.archived ?? 0}, spam: {r.spam_marked ?? 0}.
-        </p>
-        <p className="mt-0.5 text-xs text-green-700 dark:text-green-400">
-          LLM calls: {r.llm_calls ?? 0}, rule-based: {r.prefiltered ?? 0}, skipped by budget:{" "}
-          {r.skipped_by_budget ?? 0}.
-        </p>
-        {classifierLabel(r) && (
-          <p className="mt-1 text-xs font-medium text-green-800 dark:text-green-300">
-            AI classifier: {classifierLabel(r)}
+      <div className="space-y-2">
+        {r.ai_limit_hit ? (
+          <div
+            className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/80"
+            role="alert"
+          >
+            <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
+              AI limit reached
+            </p>
+            <p className="mt-0.5 text-xs text-amber-800 dark:text-amber-300">
+              {r.ai_limit_message ??
+                "Your AI provider rate or usage limit was hit during this run."}
+            </p>
+            {(r.skipped_by_ai_limit ?? 0) > 0 ? (
+              <p className="mt-0.5 text-xs text-amber-800 dark:text-amber-300">
+                {r.skipped_by_ai_limit} message(s) were not classified because of the limit.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 dark:border-green-800 dark:bg-green-950/80">
+          <p className="text-xs font-medium text-green-800 dark:text-green-300">
+            Run complete
+            {isDry && (
+              <span className="ml-1.5 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] dark:bg-green-900">
+                dry run
+              </span>
+            )}
           </p>
-        )}
+          <p className="mt-0.5 text-xs text-green-700 dark:text-green-400">
+            {r.accounts_processed ?? 0} account(s) · {r.candidates ?? 0} messages ·{" "}
+            {r.processed ?? 0} processed. {prefix}Labels: {r.labels_applied ?? 0}, archived:{" "}
+            {r.archived ?? 0}, spam: {r.spam_marked ?? 0}.
+          </p>
+          <p className="mt-0.5 text-xs text-green-700 dark:text-green-400">
+            LLM calls: {r.llm_calls ?? 0}, rule-based: {r.prefiltered ?? 0}, skipped by budget:{" "}
+            {r.skipped_by_budget ?? 0}
+            {(r.skipped_by_ai_limit ?? 0) > 0
+              ? `, skipped by AI limit: ${r.skipped_by_ai_limit}`
+              : ""}
+            .
+          </p>
+          {classifierLabel(r) && (
+            <p className="mt-1 text-xs font-medium text-green-800 dark:text-green-300">
+              AI classifier: {classifierLabel(r)}
+            </p>
+          )}
+        </div>
       </div>
     );
   }
@@ -215,8 +240,14 @@ function ActivityLog({ entries }: { entries: RunJobProgress[] }) {
               key={entry.timestamp}
               className="animate-[run-job-activity-fade_0.35s_ease-out]"
             >
-              <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400">
-                {entry.phase}
+              <span
+                className={
+                  entry.phase === "ai_limit"
+                    ? "text-[10px] font-medium text-amber-700 dark:text-amber-400"
+                    : "text-[10px] font-medium text-indigo-600 dark:text-indigo-400"
+                }
+              >
+                {entry.phase === "ai_limit" ? "AI limit" : entry.phase}
               </span>
               <p className="mt-0.5 text-xs leading-snug text-zinc-700 dark:text-zinc-300">
                 {entry.message}
