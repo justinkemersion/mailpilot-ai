@@ -1,6 +1,8 @@
 "use client";
 
 import { SignOutButton } from "@/app/dashboard/SignOutButton";
+import { focusRing } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { Menu } from "lucide-react";
 
 interface TopBarProps {
@@ -17,7 +19,10 @@ export function TopBar({ title, userLabel, onMenuOpen }: TopBarProps) {
           <button
             type="button"
             onClick={onMenuOpen}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800"
+            className={cn(
+              "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800",
+              focusRing
+            )}
             aria-label="Open navigation menu"
           >
             <Menu className="h-5 w-5" aria-hidden />

@@ -1,5 +1,7 @@
 "use client";
 
+import { focusRing } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { Loader2, RefreshCw, X } from "lucide-react";
 import { useRef } from "react";
 
@@ -43,10 +45,11 @@ export function RunSyncButton({
         type="button"
         onClick={() => dialogRef.current?.showModal()}
         disabled={submitting || isActive}
-        className={
+        className={cn(
           className ??
-          "inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[9rem] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
-        }
+            "inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[9rem] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700",
+          focusRing
+        )}
       >
         <RefreshCw className="h-4 w-4 shrink-0" aria-hidden />
         {submitting ? "Queuing…" : isActive ? "Running…" : "Run sync"}

@@ -5,6 +5,8 @@ import {
   isUndone,
   type ProcessedEmailRow,
 } from "@/lib/emailActivity";
+import { focusRing } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { Loader2, Undo2 } from "lucide-react";
 
 export type UndoButtonState = "idle" | "pending" | "done" | "error";
@@ -26,7 +28,10 @@ export function UndoActionButton({ row, state, onUndo }: UndoActionButtonProps) 
         onClick={() => onUndo(row)}
         disabled={state === "pending"}
         aria-label="Undo Gmail changes for this message"
-        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-600 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        className={cn(
+          "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-600 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800",
+          focusRing
+        )}
       >
         {state === "pending" ? (
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />

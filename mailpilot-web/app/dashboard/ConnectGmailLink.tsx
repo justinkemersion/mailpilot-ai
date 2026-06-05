@@ -1,8 +1,14 @@
+import { focusRing } from "@/lib/ui";
+import { cn } from "@/lib/utils";
+
 export function ConnectGmailLink() {
   return (
     <a
       href="/auth/google"
-      className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 sm:w-auto dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+      className={cn(
+        "inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 sm:w-auto dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200",
+        focusRing
+      )}
     >
       <svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true">
         <path

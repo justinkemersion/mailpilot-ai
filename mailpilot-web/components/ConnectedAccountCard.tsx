@@ -4,6 +4,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import type { ConnectedAccountItem } from "@/app/dashboard/ConnectedAccountsList";
 import { accountAvatarClass, accountInitial } from "@/lib/accountAvatar";
 import { formatMailpilotDateUtc } from "@/lib/formatMailpilotDate";
+import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { Trash2 } from "lucide-react";
 
@@ -92,9 +93,15 @@ export function ConnectedAccountCard({
             aria-labelledby={`proc-label-${account.id}`}
             disabled={controlsDisabled}
             onClick={() => onToggle(!processingEnabled)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                if (!controlsDisabled) onToggle(!processingEnabled);
+              }
+            }}
             className={cn(
               "relative h-6 w-10 shrink-0 rounded-full transition-colors",
-              "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500",
+              focusRing,
               "disabled:cursor-not-allowed disabled:opacity-50",
               processingEnabled
                 ? "bg-indigo-600 dark:bg-indigo-500"
@@ -112,7 +119,10 @@ export function ConnectedAccountCard({
             type="button"
             disabled={controlsDisabled}
             onClick={onDisconnect}
-            className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-red-400"
+            className={cn(
+              "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-red-400",
+              focusRing
+            )}
             aria-label={`Disconnect ${account.email}`}
           >
             <Trash2 className="h-4 w-4" strokeWidth={2} />

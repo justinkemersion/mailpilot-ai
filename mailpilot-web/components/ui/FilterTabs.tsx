@@ -1,5 +1,6 @@
 "use client";
 
+import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 
 export interface FilterTabOption {
@@ -40,7 +41,8 @@ export function FilterTabs({
             aria-selected={active}
             onClick={() => onChange(option.value)}
             className={cn(
-              "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium capitalize transition-colors",
+              "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium capitalize transition-colors",
+              focusRing,
               active
                 ? "bg-indigo-600 text-white dark:bg-indigo-500"
                 : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"

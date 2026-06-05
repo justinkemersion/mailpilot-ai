@@ -158,7 +158,7 @@ function ActivityLog({ entries }: { entries: RunJobProgress[] }) {
           {entries.map((entry) => (
             <li
               key={entry.timestamp}
-              className="animate-[run-job-activity-fade_0.35s_ease-out]"
+              className="animate-run-job-activity-fade"
             >
               <span
                 className={
@@ -354,6 +354,8 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
 
       <div
         className={`flex min-w-0 flex-col gap-3${isSection ? " border-t border-zinc-100 pt-3 dark:border-zinc-800" : ""}`}
+        aria-live="polite"
+        aria-relevant="additions text"
       >
         {classifierLabelActive ? (
           <ClassifierSourceBadge label={classifierLabelActive} pending={isActive} />

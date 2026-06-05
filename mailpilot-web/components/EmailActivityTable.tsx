@@ -2,6 +2,8 @@
 
 import { FilterTabs, type FilterTabOption } from "@/components/ui/FilterTabs";
 import { CategoryPill } from "@/components/ui/CategoryPill";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { LoadingSkeleton } from "@/components/ui/LoadingSkeleton";
 import { SearchInput } from "@/components/ui/SearchInput";
 import {
   UndoActionButton,
@@ -18,7 +20,9 @@ import {
   type ProcessedEmailRow,
 } from "@/lib/emailActivity";
 import { formatMailpilotDateUtc } from "@/lib/formatMailpilotDate";
-import { Loader2 } from "lucide-react";
+import { focusRing } from "@/lib/ui";
+import { cn } from "@/lib/utils";
+import { Inbox, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -77,6 +81,7 @@ export function EmailActivityTable({
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingCategory, setLoadingCategory] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const rowsSyncKey = useMemo(
     () =>
@@ -198,6 +203,7 @@ export function EmailActivityTable({
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
       setUndoState((s) => ({ ...s, [row.id]: "done" }));
+      setStatusMessage(`Gmail changes undone for “${row.subject ?? "message"}”.`);
       setRows((prev) =>
         prev.map((r) =>
           r.id === row.id
@@ -212,24 +218,25 @@ export function EmailActivityTable({
     } catch (err) {
       console.error("Undo failed:", err);
       setUndoState((s) => ({ ...s, [row.id]: "error" }));
+      setStatusMessage("Undo failed. Please try again.");
     }
   }
 
   if (rows.length === 0 && !loadingCategory && categoryFilter === "" && !searchQuery) {
     return (
-      <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-12 text-center dark:border-zinc-700 dark:bg-zinc-900 sm:px-6">
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          No processed emails yet.
-        </p>
-        <p className="mt-1 text-sm text-zinc-400 dark:text-zinc-500">
-          Run the MailPilot worker to start categorizing your inbox.
-        </p>
-      </div>
+      <EmptyState
+        icon={Inbox}
+        title="No processed emails yet"
+        description="Run the MailPilot worker to start categorizing your inbox."
+      />
     );
   }
 
   return (
     <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {statusMessage ?? ""}
+      </p>
       <div className="space-y-3 border-b border-zinc-200 px-3 py-3 dark:border-zinc-800 sm:px-4">
         <SearchInput value={searchQuery} onChange={setSearchQuery} />
         <FilterTabs
@@ -249,10 +256,7 @@ export function EmailActivityTable({
       ) : null}
 
       {loadingCategory ? (
-        <div className="flex items-center justify-center gap-2 px-4 py-10 text-sm text-zinc-500 dark:text-zinc-400">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          Loading…
-        </div>
+        <LoadingSkeleton variant="table" rows={5} className="border-0" />
       ) : displayRows.length === 0 ? (
         <p className="px-4 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
           {searchQuery.trim()
@@ -342,7 +346,10 @@ export function EmailActivityTable({
             type="button"
             onClick={() => void handleLoadMore()}
             disabled={loadingMore}
-            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-6 dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            className={cn(
+              "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-6 dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-200 dark:hover:bg-zinc-800",
+              focusRing
+            )}
           >
             {loadingMore ? (
               <>

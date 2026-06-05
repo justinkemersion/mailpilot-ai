@@ -1,5 +1,6 @@
 "use client";
 
+import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { Search, X } from "lucide-react";
 
@@ -30,7 +31,7 @@ export function SearchInput({
         className={cn(
           "min-h-11 w-full rounded-lg border border-zinc-200 bg-white py-2 pr-10 pl-9 text-sm",
           "text-zinc-900 placeholder:text-zinc-400",
-          "focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none",
+          focusRing,
           "dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
         )}
         aria-label={placeholder}
@@ -39,7 +40,10 @@ export function SearchInput({
         <button
           type="button"
           onClick={() => onChange("")}
-          className="absolute top-1/2 right-2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          className={cn(
+            "absolute top-1/2 right-2 inline-flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200",
+            focusRing
+          )}
           aria-label="Clear search"
         >
           <X className="h-3.5 w-3.5" aria-hidden />

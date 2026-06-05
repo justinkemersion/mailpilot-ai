@@ -60,3 +60,48 @@ body {
     transform: translateY(0);
   }
 }
+
+@keyframes run-job-activity-fade-reduced {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-run-job-activity-fade {
+  animation: run-job-activity-fade 0.35s ease-out;
+}
+
+.animate-drawer-in {
+  animation: drawer-in 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-run-job-activity-fade {
+    animation: run-job-activity-fade-reduced 0.2s ease-out;
+  }
+
+  .animate-drawer-in {
+    animation: none;
+  }
+}
