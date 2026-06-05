@@ -1,7 +1,7 @@
 # MailPilot Phase 6 — Visual & Showcase Polish
 
 > Follow-up to [`mailpilot-ui-upgrade-plan.md`](mailpilot-ui-upgrade-plan.md) (Phases 1A–5 complete and deployed).
-> **Status:** In progress — Phases 6A–6B complete; 6C–6E pending.
+> **Status:** In progress — Phases 6A–6C complete; 6D–6E pending.
 
 **Goal:** Elevate the shipped UI from a competent internal dashboard to a polished Flux showcase product — **visual and compositional changes only**. No backend, OAuth, sync, undo, demo mode, schema, or API contract changes.
 
