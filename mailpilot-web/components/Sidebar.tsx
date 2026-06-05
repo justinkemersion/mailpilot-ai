@@ -1,5 +1,7 @@
 "use client";
 
+import { SignOutButton } from "@/app/dashboard/SignOutButton";
+import { BrandMark } from "@/components/BrandMark";
 import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { Clock, LayoutDashboard, Mail, Settings, X } from "lucide-react";
@@ -15,11 +17,59 @@ export const DASHBOARD_NAV = [
 ] as const;
 
 interface SidebarProps {
+  userLabel: string;
   mobileOpen: boolean;
   onMobileClose: () => void;
 }
 
-export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
+function SidebarBrand({
+  showTagline,
+  onNavigate,
+}: {
+  showTagline: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <Link
+      href="/dashboard/overview"
+      onClick={onNavigate}
+      className={cn(
+        "flex min-w-0 items-center gap-3 rounded-lg transition-opacity hover:opacity-90",
+        focusRing
+      )}
+    >
+      <BrandMark />
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold tracking-tight text-zinc-50">
+          MailPilot
+        </p>
+        {showTagline ? (
+          <p className="truncate text-xs text-zinc-500">AI inbox automation</p>
+        ) : null}
+      </div>
+    </Link>
+  );
+}
+
+function SidebarUserFooter({ userLabel }: { userLabel: string }) {
+  return (
+    <div className="mt-auto border-t border-zinc-800 p-3">
+      <p
+        className="truncate text-xs text-zinc-500"
+        title={userLabel}
+      >
+        {userLabel}
+      </p>
+      <SignOutButton variant="sidebar" />
+    </div>
+  );
+}
+
+export function Sidebar({
+  userLabel,
+  mobileOpen,
+  onMobileClose,
+}: SidebarProps) {
   const pathname = usePathname();
   const drawerRef = useRef<HTMLElement>(null);
 
@@ -55,15 +105,22 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             href={href}
             onClick={onMobileClose}
             className={cn(
-              "flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors",
+              "flex min-h-11 items-center gap-3 rounded-lg border-l-2 px-3 py-2.5 text-sm font-medium transition-colors",
               focusRing,
               active
-                ? "bg-zinc-800 text-zinc-50"
-                : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100"
+                ? "border-indigo-400 bg-zinc-800/80 text-zinc-50"
+                : "border-transparent text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100"
             )}
             aria-current={active ? "page" : undefined}
           >
-            <Icon className="h-4 w-4 shrink-0" aria-hidden />
+            <Icon
+              className={cn(
+                "h-4 w-4 shrink-0",
+                active ? "text-indigo-400" : undefined
+              )}
+              strokeWidth={active ? 2.25 : 2}
+              aria-hidden
+            />
             {label}
           </Link>
         );
@@ -73,19 +130,12 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 
   return (
     <>
-      <aside className="hidden w-56 shrink-0 flex-col border-r border-zinc-800 bg-zinc-900 lg:flex">
-        <div className="flex h-14 items-center border-b border-zinc-800 px-4">
-          <Link
-            href="/dashboard/overview"
-            className={cn(
-              "text-sm font-semibold tracking-tight text-zinc-50",
-              focusRing
-            )}
-          >
-            MailPilot
-          </Link>
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-900 lg:flex">
+        <div className="flex h-16 items-center border-b border-zinc-800 px-4">
+          <SidebarBrand showTagline />
         </div>
         {nav}
+        <SidebarUserFooter userLabel={userLabel} />
       </aside>
 
       {mobileOpen ? (
@@ -103,22 +153,13 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             aria-label="Navigation menu"
             className="animate-drawer-in relative flex h-full w-[min(14rem,85vw)] max-w-xs flex-col border-r border-zinc-800 bg-zinc-900 shadow-xl"
           >
-            <div className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
-              <Link
-                href="/dashboard/overview"
-                className={cn(
-                  "text-sm font-semibold tracking-tight text-zinc-50",
-                  focusRing
-                )}
-                onClick={onMobileClose}
-              >
-                MailPilot
-              </Link>
+            <div className="flex h-14 items-center justify-between gap-2 border-b border-zinc-800 px-4">
+              <SidebarBrand showTagline={false} onNavigate={onMobileClose} />
               <button
                 type="button"
                 onClick={onMobileClose}
                 className={cn(
-                  "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100",
+                  "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100",
                   focusRing
                 )}
                 aria-label="Close menu"
@@ -127,6 +168,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
               </button>
             </div>
             {nav}
+            <SidebarUserFooter userLabel={userLabel} />
           </aside>
         </div>
       ) : null}

@@ -35,45 +35,48 @@ export function ConnectedAccountCard({
   return (
     <li
       className={cn(
-        "flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4",
-        "dark:border-zinc-800 dark:bg-zinc-900"
+        "rounded-xl border border-border-subtle bg-surface-1 p-4"
       )}
     >
-      <div className="flex items-start gap-3">
-        <div
-          className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
-            accountAvatarClass(account.email)
-          )}
-          aria-hidden
-        >
-          {accountInitial(account.email)}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p
-            className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50"
-            title={title}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-5">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div
+            className={cn(
+              "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
+              accountAvatarClass(account.email)
+            )}
+            aria-hidden
           >
-            {primary}
-          </p>
-          <p
-            className="truncate text-xs text-zinc-500 dark:text-zinc-400"
-            title={title}
-          >
-            {account.email}
-          </p>
-          <div className="mt-2">
-            <StatusBadge status={processingEnabled ? "enabled" : "disabled"} />
+            {accountInitial(account.email)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p
+              className="truncate text-sm font-semibold text-text-primary"
+              title={title}
+            >
+              {primary}
+            </p>
+            <p
+              className="truncate text-xs text-text-muted"
+              title={title}
+            >
+              {account.email}
+            </p>
+            <div className="mt-1.5 sm:hidden">
+              <StatusBadge status={processingEnabled ? "enabled" : "disabled"} />
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="hidden shrink-0 sm:block">
+          <StatusBadge status={processingEnabled ? "enabled" : "disabled"} />
+        </div>
+
+        <p className="shrink-0 text-xs text-text-muted sm:min-w-[8.5rem] sm:text-right">
           {lastSyncedAt ? (
             <>
               Last activity{" "}
-              <span className="font-medium text-zinc-700 dark:text-zinc-300">
+              <span className="font-medium text-text-secondary">
                 {formatMailpilotDateUtc(lastSyncedAt)}
               </span>
             </>
@@ -81,7 +84,8 @@ export function ConnectedAccountCard({
             "No processed mail yet"
           )}
         </p>
-        <div className="flex shrink-0 items-center gap-2">
+
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <span className="sr-only" id={`proc-label-${account.id}`}>
             Background processing for {account.email}
           </span>
@@ -120,12 +124,13 @@ export function ConnectedAccountCard({
             disabled={controlsDisabled}
             onClick={onDisconnect}
             className={cn(
-              "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-red-400",
+              "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md px-2 text-sm text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40",
               focusRing
             )}
             aria-label={`Disconnect ${account.email}`}
           >
-            <Trash2 className="h-4 w-4" strokeWidth={2} />
+            <Trash2 className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+            <span className="hidden sm:inline">Disconnect</span>
           </button>
         </div>
       </div>

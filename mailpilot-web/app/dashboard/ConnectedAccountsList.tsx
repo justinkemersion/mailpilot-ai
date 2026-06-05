@@ -1,6 +1,7 @@
 "use client";
 
 import { ConnectedAccountCard } from "@/components/ConnectedAccountCard";
+import { AlertBanner } from "@/components/ui/AlertBanner";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -112,15 +113,10 @@ export function ConnectedAccountsList({
   return (
     <div className="space-y-3">
       {actionError ? (
-        <p
-          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-300"
-          role="alert"
-        >
-          {actionError}
-        </p>
+        <AlertBanner variant="error">{actionError}</AlertBanner>
       ) : null}
 
-      <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {initialAccounts.map((account) => (
           <ConnectedAccountCard
             key={account.id}

@@ -1,6 +1,6 @@
 # MailPilot UI Upgrade Plan
 > Upgrading from a functional internal dashboard to a polished Flux showcase app.
-> Status: Complete — Phases 1A–5 implemented.
+> Status: Complete — Phases 1A–5 implemented; Phase 6 visual polish and Phases 7–8 showcase closure shipped. See [`mailpilot-phase-6-visual-polish.md`](mailpilot-phase-6-visual-polish.md) and [`mailpilot-phase-7-8-showcase-closure.md`](mailpilot-phase-7-8-showcase-closure.md).
 
 ---
 

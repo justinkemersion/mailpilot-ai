@@ -2,6 +2,7 @@
 
 import { FilterTabs, type FilterTabOption } from "@/components/ui/FilterTabs";
 import { CategoryPill } from "@/components/ui/CategoryPill";
+import { AlertBanner } from "@/components/ui/AlertBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LoadingSkeleton } from "@/components/ui/LoadingSkeleton";
 import { SearchInput } from "@/components/ui/SearchInput";
@@ -235,20 +236,21 @@ export function EmailActivityTable({
   ) {
     return (
       <EmptyState
+        variant="inline"
         icon={Inbox}
         title="No processed emails yet"
-        description="Run the MailPilot worker to start categorizing your inbox."
+        description="Run a sync from Overview to start categorizing your inbox."
       />
     );
   }
 
   return (
-    <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-border-subtle bg-surface-1">
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {statusMessage ?? ""}
       </p>
       {!isPreview ? (
-        <div className="space-y-3 border-b border-zinc-200 bg-zinc-50/80 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900/50 sm:px-4">
+        <div className="space-y-3 border-b border-border-subtle bg-surface-2 px-3 py-3 sm:px-4">
           <SearchInput value={searchQuery} onChange={setSearchQuery} />
           <FilterTabs
             options={filterOptions}
@@ -259,12 +261,9 @@ export function EmailActivityTable({
       ) : null}
 
       {fetchError ? (
-        <p
-          className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-300"
-          role="alert"
-        >
+        <AlertBanner variant="error" layout="inline">
           {fetchError}
-        </p>
+        </AlertBanner>
       ) : null}
 
       {loadingCategory ? (

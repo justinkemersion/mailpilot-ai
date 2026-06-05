@@ -1,7 +1,7 @@
 # MailPilot Phase 6 — Visual & Showcase Polish
 
 > Follow-up to [`mailpilot-ui-upgrade-plan.md`](mailpilot-ui-upgrade-plan.md) (Phases 1A–5 complete and deployed).
-> **Status:** In progress — Phases 6A–6C complete; 6D–6E pending.
+> **Status:** Complete — Phases 6A–6E shipped.
 
 **Goal:** Elevate the shipped UI from a competent internal dashboard to a polished Flux showcase product — **visual and compositional changes only**. No backend, OAuth, sync, undo, demo mode, schema, or API contract changes.
 
@@ -12,8 +12,8 @@
 | **6A** — Overview composition | ✅ Complete | Preview limit 10, accounts snapshot, hero metrics |
 | **6B** — Run result / sync UI | ✅ Complete | Summary + disclosure; preview header deduped |
 | **6C** — Activity table density | ✅ Complete | Merged message column, action chips, centered load-more |
-| **6D** — Sidebar / TopBar identity | Pending | |
-| **6E** — Mobile and final visual QA | Pending | |
+| **6D** — Sidebar / TopBar identity | ✅ Complete | Brand mark, sidebar footer, TopBar breadcrumb |
+| **6E** — Mobile and final visual QA | ✅ Complete | Tokens, AlertBanner, empty variants, account cards |
 
 ---
 
@@ -494,23 +494,23 @@ Each pass is one commit, `tsc` + `npm run lint` + `npm run build` before merge. 
 
 ---
 
-### Phase 6D — Sidebar / TopBar identity polish
+### Phase 6D — Sidebar / TopBar identity polish ✅
 
 **Goals:** Product branding and navigation chrome worthy of a Flux showcase.
 
-**Files likely touched:**
+**Files touched:**
 - `components/Sidebar.tsx`
 - `components/TopBar.tsx`
 - `components/AppShell.tsx`
 - `app/dashboard/SignOutButton.tsx`
-- Optional: `components/BrandMark.tsx` (inline SVG)
+- `components/BrandMark.tsx` (inline SVG)
 
 **Acceptance criteria:**
-- Sidebar: mark + wordmark + tagline; refined active/hover states; user footer on desktop
-- TopBar: cleaner title treatment; mobile brand visible; sign-out not duplicated awkwardly on desktop
-- Run Sync **not** added to TopBar as global executor (link-to-overview optional)
-- Mobile drawer: branding matches desktop; Escape/scroll lock still work
-- All nav links and skip link still pass keyboard audit
+- [x] Sidebar: mark + wordmark + tagline; refined active/hover states; user footer on desktop
+- [x] TopBar: cleaner title treatment; mobile brand visible; sign-out not duplicated awkwardly on desktop
+- [x] Run Sync **not** added to TopBar as global executor (link-to-overview optional)
+- [x] Mobile drawer: branding matches desktop; Escape/scroll lock still work
+- [x] All nav links and skip link still pass keyboard audit
 
 **Risks:**
 - Moving sign-out may confuse existing users — keep one obvious sign-out path per viewport
@@ -523,24 +523,25 @@ Each pass is one commit, `tsc` + `npm run lint` + `npm run build` before merge. 
 
 ---
 
-### Phase 6E — Mobile and final visual QA
+### Phase 6E — Mobile and final visual QA ✅
 
 **Goals:** Cross-viewport consistency, token adoption sweep, empty/alert polish.
 
-**Files likely touched:**
-- `app/globals.css` — border-subtle, token utility usage
-- `components/ui/EmptyState.tsx`, `components/AccountsEmptyState.tsx`
-- `app/dashboard/overview/page.tsx` — `AlertBanner` for connect messages
-- `components/ConnectedAccountCard.tsx` — horizontal layout polish
-- Any remaining high-traffic components with harsh `uppercase` or ops copy
+**Files touched:**
+- `app/globals.css` — `--border-subtle`, radius tokens
+- `components/ui/AlertBanner.tsx`, `components/ui/EmptyState.tsx`, `components/AccountsEmptyState.tsx`
+- `app/dashboard/overview/page.tsx` — `AlertBanner` for connect messages; tighter mobile spacing
+- `components/ConnectedAccountCard.tsx`, `ConnectedAccountsList.tsx` — horizontal layout, `AlertBanner` errors
+- `components/AppShell.tsx`, `EmailActivityTable.tsx`, `MetricCard.tsx`, `ClassifierStatusCard.tsx`, `CategoryPill.tsx`
+- `RunSyncControl.tsx`, `RunResultBanner.tsx` — sentence-case labels
 
 **Acceptance criteria:**
-- Overview scroll length reduced on mobile vs pre-6A baseline (qualitative)
-- Empty states differentiated (`hero` vs `inline`)
-- Connect success/error banners match design system
-- `prefers-reduced-motion` still respected
-- Touch targets ≥44px on primary controls
-- No new accessibility regressions (manual spot-check Lighthouse a11y ≥90 on Overview)
+- [x] Overview scroll length reduced on mobile vs pre-6A baseline (qualitative)
+- [x] Empty states differentiated (`hero` vs `inline`)
+- [x] Connect success/error banners match design system
+- [x] `prefers-reduced-motion` still respected
+- [x] Touch targets ≥44px on primary controls
+- [x] No new accessibility regressions (manual spot-check Lighthouse a11y ≥90 on Overview)
 
 **Risks:**
 - Token migration partial — document remaining `zinc-*` as acceptable debt
@@ -580,14 +581,12 @@ Do **not**:
 
 ## 10. Final Recommendation
 
-**Phases 6A–6C are complete.** Next up: **Phase 6D — Sidebar / TopBar identity polish.**
+**Phases 6A–6E are complete.** Phase 6 visual polish is done.
 
-**6E** (mobile/token sweep) follows after shell branding.
-
-**Recommended order (remaining):** **6D → 6E**
+**Remaining zinc-* token debt** is acceptable per plan — migrate incrementally in future work.
 
 Defer **TopBar Run Sync promotion** until a follow-up plan defines `RunSyncProvider` (or equivalent) in `AppShell` with unchanged API polling and explicit `router.refresh()` scope — out of Phase 6 unless the user explicitly expands scope.
 
 ---
 
-*Related: [`mailpilot-ui-upgrade-plan.md`](mailpilot-ui-upgrade-plan.md) · [`BACKLOG.md`](../BACKLOG.md) (stale activity when sync runs off-dashboard)*
+*Related: [`mailpilot-ui-upgrade-plan.md`](mailpilot-ui-upgrade-plan.md) · [`mailpilot-phase-7-8-showcase-closure.md`](mailpilot-phase-7-8-showcase-closure.md) · [`BACKLOG.md`](../BACKLOG.md)*

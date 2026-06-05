@@ -20,7 +20,7 @@ export function OverviewMetricsGrid({ metrics }: OverviewMetricsGridProps) {
 
   return (
     <section aria-label="Overview metrics" className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <MetricCard
           label="Emails processed"
           value={metrics.total_processed}

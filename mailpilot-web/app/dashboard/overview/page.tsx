@@ -1,3 +1,4 @@
+import { AlertBanner } from "@/components/ui/AlertBanner";
 import { ClassifierStatusCard } from "@/components/ClassifierStatusCard";
 import { OverviewAccountsSnapshot } from "@/components/OverviewAccountsSnapshot";
 import { OverviewMetricsGrid } from "@/components/OverviewMetricsGrid";
@@ -40,17 +41,17 @@ export default async function OverviewPage({
   const previewCount = historyPreview.length;
 
   return (
-    <div className="space-y-10">
-      {justConnected && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400">
+    <div className="space-y-8 sm:space-y-10">
+      {justConnected ? (
+        <AlertBanner variant="success">
           Gmail account connected successfully.
-        </div>
-      )}
-      {connectError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+        </AlertBanner>
+      ) : null}
+      {connectError ? (
+        <AlertBanner variant="error">
           Something went wrong connecting Gmail ({connectError}). Please try again.
-        </div>
-      )}
+        </AlertBanner>
+      ) : null}
 
       <header className="space-y-1">
         <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
@@ -63,7 +64,7 @@ export default async function OverviewPage({
 
       <OverviewMetricsGrid metrics={metrics} />
 
-      <section className="grid gap-4 lg:grid-cols-2">
+      <section className="grid gap-3 sm:gap-4 lg:grid-cols-2">
         <ClassifierStatusCard job={latestJob} />
         <RunSyncControl initialJob={latestJob} variant="section" />
       </section>

@@ -31,7 +31,7 @@ export function ClassifierStatusCard({ job }: ClassifierStatusCardProps) {
   const statusBadge = runStatusBadge(job?.status);
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="rounded-xl border border-border-subtle bg-surface-1 p-4">
       <div className="flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-950/60">
           <Cpu className="h-4 w-4 text-indigo-600 dark:text-indigo-400" aria-hidden />

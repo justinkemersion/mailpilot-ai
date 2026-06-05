@@ -73,7 +73,7 @@ function ClassifierSourceBadge({
             aria-hidden
           />
         )}
-        <span className="text-[10px] font-semibold tracking-wide text-indigo-700 uppercase dark:text-indigo-300">
+        <span className="text-[10px] font-medium text-indigo-700 dark:text-indigo-300">
           AI classifier
         </span>
       </div>
@@ -372,11 +372,11 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
 
   const isSection = variant === "section";
   const rootClass = isSection
-    ? "flex w-full min-w-0 flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-none"
+    ? "flex w-full min-w-0 scroll-mt-20 flex-col gap-3 rounded-xl border border-border-subtle bg-surface-1 p-4 shadow-sm dark:shadow-none"
     : "flex w-full min-w-0 flex-col gap-2";
 
   return (
-    <div className={rootClass}>
+    <div className={rootClass} id={isSection ? "sync" : undefined}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div
           className={isSection ? "min-w-0" : "hidden min-w-0"}

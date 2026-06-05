@@ -4,6 +4,7 @@ import { Mail } from "lucide-react";
 export function AccountsEmptyState() {
   return (
     <EmptyState
+      variant="hero"
       icon={Mail}
       title="No Gmail accounts connected"
       description="Connect a Gmail account to start automatic sorting and labeling."

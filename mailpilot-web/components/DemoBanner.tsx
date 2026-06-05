@@ -24,7 +24,7 @@ export function DemoBanner({ showEnvBanner }: DemoBannerProps) {
       className="border-b border-indigo-200 bg-indigo-50 px-4 py-3 dark:border-indigo-900 dark:bg-indigo-950/50"
       role="status"
     >
-      <div className="mx-auto flex max-w-5xl items-start gap-3">
+      <div className="mx-auto flex max-w-6xl items-start gap-3">
         <Info
           className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400"
           aria-hidden

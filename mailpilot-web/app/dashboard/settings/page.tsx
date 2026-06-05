@@ -18,6 +18,7 @@ export default async function SettingsPage() {
         </p>
       </div>
       <EmptyState
+        variant="inline"
         icon={Settings}
         title="Settings coming soon"
         description="Classifier configuration and runner preferences will be surfaced here when available."

@@ -73,8 +73,8 @@ export function RunResultBanner({ job, onDismiss }: RunResultBannerProps) {
           <p className="text-sm font-medium text-green-800 dark:text-green-300">
             {isDry ? "Preview complete" : "Run complete"}
             {isDry ? (
-              <span className="ml-1.5 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase dark:bg-green-900">
-                dry run
+              <span className="ml-1.5 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium dark:bg-green-900">
+                Dry run
               </span>
             ) : null}
           </p>

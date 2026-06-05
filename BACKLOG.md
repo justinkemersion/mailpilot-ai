@@ -14,4 +14,6 @@ Follow-ups that should survive Cursor sessions and chat history. Prefer tracking
 
 **Possible approaches:** Supabase Realtime on `processed_emails` (`INSERT`, RLS-scoped to the signed-in user); a light interval calling `router.refresh()` while the dashboard is mounted; `document.visibilitychange` or window-focus handlers to refetch.
 
-**Pointers:** [mailpilot-web/app/dashboard/RunSyncControl.tsx](mailpilot-web/app/dashboard/RunSyncControl.tsx), [mailpilot-web/app/dashboard/HistoryTable.tsx](mailpilot-web/app/dashboard/HistoryTable.tsx).
+**Partial mitigation (Phase 7):** `AppShell` calls `router.refresh()` when the document becomes visible again — helps when the user returns to the tab but not when sync completes while the tab stays focused.
+
+**Pointers:** [mailpilot-web/components/AppShell.tsx](mailpilot-web/components/AppShell.tsx), [mailpilot-web/app/dashboard/RunSyncControl.tsx](mailpilot-web/app/dashboard/RunSyncControl.tsx), [mailpilot-web/app/dashboard/HistoryTable.tsx](mailpilot-web/app/dashboard/HistoryTable.tsx).

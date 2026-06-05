@@ -10,7 +10,7 @@ export function CategoryPill({ category, size = "sm" }: CategoryPillProps) {
   return (
     <span
       className={cn(
-        "inline-flex rounded-full font-medium capitalize",
+        "inline-flex rounded-full font-medium capitalize ring-1 ring-inset ring-black/5 dark:ring-white/10",
         size === "sm" ? "px-2 py-0.5 text-xs" : "px-3 py-1 text-sm",
         categoryBadgeClass(category)
       )}

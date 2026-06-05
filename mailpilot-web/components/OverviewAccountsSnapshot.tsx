@@ -26,8 +26,7 @@ function CompactAccountCard({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-xl border border-zinc-200/80 bg-white p-4 sm:flex-row sm:items-center sm:gap-4",
-        "dark:border-zinc-800/80 dark:bg-zinc-900"
+        "flex flex-col gap-3 rounded-xl border border-border-subtle bg-surface-1 p-4 sm:flex-row sm:items-center sm:gap-4"
       )}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -86,8 +85,7 @@ function AccountsSummaryCard({
   return (
     <div
       className={cn(
-        "flex flex-col gap-4 rounded-xl border border-zinc-200/80 bg-white p-5 sm:flex-row sm:items-center sm:justify-between",
-        "dark:border-zinc-800/80 dark:bg-zinc-900"
+        "flex flex-col gap-4 rounded-xl border border-border-subtle bg-surface-1 p-5 sm:flex-row sm:items-center sm:justify-between"
       )}
     >
       <div>

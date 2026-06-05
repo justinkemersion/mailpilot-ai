@@ -4,8 +4,8 @@ import { TopBar } from "@/components/TopBar";
 import { pageTitleForPath, Sidebar } from "@/components/Sidebar";
 import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
-import { usePathname } from "next/navigation";
-import { Suspense, useCallback, useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
 import { DemoBanner } from "@/components/DemoBanner";
 
 interface AppShellProps {
@@ -20,13 +20,29 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const title = pageTitleForPath(pathname);
   const closeMobile = useCallback(() => setMobileOpen(false), []);
 
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        router.refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [router]);
+
   return (
-    <div className="flex min-h-screen overflow-x-hidden bg-zinc-50 dark:bg-zinc-950">
-      <Sidebar mobileOpen={mobileOpen} onMobileClose={closeMobile} />
+    <div className="flex min-h-screen overflow-x-hidden bg-surface-base">
+      <Sidebar
+        userLabel={userLabel}
+        mobileOpen={mobileOpen}
+        onMobileClose={closeMobile}
+      />
       <div className="flex min-w-0 flex-1 flex-col">
         <a
           href="#dashboard-main"
@@ -37,17 +53,13 @@ export function AppShell({
         >
           Skip to content
         </a>
-        <TopBar
-          title={title}
-          userLabel={userLabel}
-          onMenuOpen={() => setMobileOpen(true)}
-        />
+        <TopBar title={title} onMenuOpen={() => setMobileOpen(true)} />
         <Suspense fallback={null}>
           <DemoBanner showEnvBanner={showDemoBanner} />
         </Suspense>
         <main
           id="dashboard-main"
-          className="mx-auto w-full max-w-5xl flex-1 space-y-8 px-4 py-8 sm:px-6 sm:py-10"
+          className="mx-auto w-full max-w-6xl flex-1 space-y-8 px-4 py-6 sm:px-6 sm:py-10"
         >
           {children}
         </main>

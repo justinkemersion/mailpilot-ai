@@ -1,3 +1,7 @@
+import { AlertBanner } from "@/components/ui/AlertBanner";
+import { BrandMark } from "@/components/BrandMark";
+import { focusRing } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { LogIn, Mail } from "lucide-react";
 
 const CALLBACK_URL = "/dashboard";
@@ -10,28 +14,23 @@ export function LoginForm({
   error?: string | null;
 }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 dark:bg-zinc-950">
+    <div className="flex min-h-screen items-center justify-center bg-surface-base px-4">
       <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <BrandMark size="md" />
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight text-text-primary">
             MailPilot
           </h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Your AI-powered email co-pilot
-          </p>
+          <p className="mt-1 text-sm text-text-muted">AI inbox automation</p>
         </div>
 
-        <div className="space-y-3 rounded-lg border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          {error ? (
-            <p className="text-sm text-red-600 dark:text-red-400" role="alert">
-              {error}
-            </p>
-          ) : null}
+        <div className="space-y-3 rounded-xl border border-border-subtle bg-surface-1 p-8 shadow-sm">
+          {error ? <AlertBanner variant="error">{error}</AlertBanner> : null}
 
           {!csrfToken ? (
-            <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+            <AlertBanner variant="error">
               Could not start sign-in. Reload the page and try again.
-            </p>
+            </AlertBanner>
           ) : (
             <>
               <form
@@ -43,9 +42,12 @@ export function LoginForm({
                 <input type="hidden" name="callbackUrl" value={CALLBACK_URL} />
                 <button
                   type="submit"
-                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className={cn(
+                    "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover",
+                    focusRing
+                  )}
                 >
-                  <LogIn className="h-4 w-4" aria-hidden="true" />
+                  <LogIn className="h-4 w-4" aria-hidden />
                   Sign in with GitHub
                 </button>
               </form>
@@ -59,9 +61,12 @@ export function LoginForm({
                 <input type="hidden" name="callbackUrl" value={CALLBACK_URL} />
                 <button
                   type="submit"
-                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
+                  className={cn(
+                    "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-1 px-4 py-2 text-sm font-semibold text-text-primary transition-colors hover:bg-surface-2",
+                    focusRing
+                  )}
                 >
-                  <Mail className="h-4 w-4" aria-hidden="true" />
+                  <Mail className="h-4 w-4" aria-hidden />
                   Sign in with Google
                 </button>
               </form>

@@ -12,6 +12,9 @@
   --text-muted: #71717a;
   --accent: #6366f1;
   --accent-hover: #4f46e5;
+  --border-subtle: color-mix(in oklab, var(--foreground) 8%, transparent);
+  --radius-card: 0.75rem;
+  --radius-pill: 9999px;
 }
 
 @theme inline {
@@ -26,6 +29,9 @@
   --color-text-muted: var(--text-muted);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
+  --color-border-subtle: var(--border-subtle);
+  --radius-card: var(--radius-card);
+  --radius-pill: var(--radius-pill);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -41,6 +47,7 @@
     --text-primary: #fafafa;
     --text-secondary: #a1a1aa;
     --text-muted: #71717a;
+    --border-subtle: color-mix(in oklab, var(--foreground) 10%, transparent);
   }
 }
 

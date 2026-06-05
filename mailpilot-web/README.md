@@ -79,6 +79,18 @@ When `MAILPILOT_DEMO_MODE=true`:
 
 Capture curated dashboard images into [`public/screenshots/`](./public/screenshots/) for README/marketing (see that folder’s README).
 
-## UI upgrade plan
+## UI upgrade plans
 
-Implementation phases and design notes: [`plans/mailpilot-ui-upgrade-plan.md`](../plans/mailpilot-ui-upgrade-plan.md).
+| Doc | Scope |
+|-----|--------|
+| [`mailpilot-ui-upgrade-plan.md`](../plans/mailpilot-ui-upgrade-plan.md) | Phases 1A–5 (routing, shell, metrics, activity, demo) |
+| [`mailpilot-phase-6-visual-polish.md`](../plans/mailpilot-phase-6-visual-polish.md) | Phase 6 visual polish (6A–6E) |
+| [`mailpilot-phase-7-8-showcase-closure.md`](../plans/mailpilot-phase-7-8-showcase-closure.md) | Login parity, TopBar sync link, tab refresh, docs closure |
+
+### Verification (before deploy)
+
+```bash
+npx tsc --noEmit && npm run lint && npm run build
+```
+
+Smoke-test Gmail connect, manual sync, undo, pagination, sign out, and 375px mobile layout per the UI plan §8 matrix.
