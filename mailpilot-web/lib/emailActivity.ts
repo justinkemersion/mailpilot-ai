@@ -68,6 +68,35 @@ export function canUndo(row: ProcessedEmailRow): boolean {
   return hasLabels || row.was_archived;
 }
 
+/** Display-only chips parsed from runner `actions_taken` text. */
+export function parseActionChips(actions: string | null): string[] {
+  if (!actions?.trim()) return [];
+
+  const text = actions.replace(/\s*\[UNDONE\]\s*/gi, "").trim();
+  if (!text) return [];
+
+  const chips: string[] = [];
+  for (const part of text.split(/;\s*/)) {
+    const p = part.trim();
+    if (!p) continue;
+    const lower = p.toLowerCase();
+
+    if (lower.startsWith("labeled:") || lower.startsWith("labeled ")) {
+      if (!chips.includes("Labeled")) chips.push("Labeled");
+    } else if (lower.includes("archived")) {
+      if (!chips.includes("Archived")) chips.push("Archived");
+    } else if (lower.includes("spam")) {
+      if (!chips.includes("Spam")) chips.push("Spam");
+    } else if (lower.includes("no mailpilot gmail changes")) {
+      if (!chips.includes("No changes")) chips.push("No changes");
+    } else if (lower.startsWith("processed as")) {
+      if (!chips.includes("Processed")) chips.push("Processed");
+    }
+  }
+
+  return chips.slice(0, 4);
+}
+
 export function rowMatchesSearch(row: ProcessedEmailRow, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;

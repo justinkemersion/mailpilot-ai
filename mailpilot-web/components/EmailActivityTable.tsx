@@ -14,6 +14,7 @@ import { CATEGORY_ORDER } from "@/lib/categories";
 import {
   EMAIL_ACTIVITY_PAGE_SIZE,
   isUndone,
+  parseActionChips,
   parseSender,
   rowMatchesSearch,
   truncateText,
@@ -247,7 +248,7 @@ export function EmailActivityTable({
         {statusMessage ?? ""}
       </p>
       {!isPreview ? (
-        <div className="space-y-3 border-b border-zinc-200 px-3 py-3 dark:border-zinc-800 sm:px-4">
+        <div className="space-y-3 border-b border-zinc-200 bg-zinc-50/80 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900/50 sm:px-4">
           <SearchInput value={searchQuery} onChange={setSearchQuery} />
           <FilterTabs
             options={filterOptions}
@@ -313,49 +314,43 @@ export function EmailActivityTable({
                 </tbody>
               </table>
             ) : (
-              <table className="w-full min-w-[44rem] text-sm">
+              <table className="w-full table-fixed text-sm">
                 <caption className="sr-only">Processed email activity</caption>
-                <thead>
+                <thead className="sticky top-0 z-10 bg-white dark:bg-zinc-900">
                   <tr className="border-b border-zinc-200 dark:border-zinc-800">
                     <th
                       scope="col"
-                      className="px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
+                      className="w-[11%] px-3 py-2.5 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 sm:px-4"
                     >
                       Received
                     </th>
                     <th
                       scope="col"
-                      className="px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
+                      className="w-[5%] px-2 py-2.5 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400"
                     >
-                      Account
+                      <span className="sr-only">Account</span>
                     </th>
                     <th
                       scope="col"
-                      className="min-w-[8rem] px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
+                      className="w-[36%] px-3 py-2.5 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 sm:px-4"
                     >
-                      Sender
+                      Message
                     </th>
                     <th
                       scope="col"
-                      className="min-w-[10rem] px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
-                    >
-                      Subject
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
+                      className="w-[14%] px-3 py-2.5 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 sm:px-4"
                     >
                       Category
                     </th>
                     <th
                       scope="col"
-                      className="min-w-[8rem] px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
+                      className="w-[20%] px-3 py-2.5 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 sm:px-4"
                     >
                       Actions
                     </th>
                     <th
                       scope="col"
-                      className="px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
+                      className="w-[14%] px-3 py-2.5 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 sm:px-4"
                     >
                       Undo
                     </th>
@@ -377,26 +372,31 @@ export function EmailActivityTable({
         </>
       )}
 
-      {!isPreview && paginate && hasMore && !loadingCategory ? (
-        <div className="border-t border-zinc-200 px-4 py-4 dark:border-zinc-800">
-          <button
-            type="button"
-            onClick={() => void handleLoadMore()}
-            disabled={loadingMore}
-            className={cn(
-              "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-6 dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-200 dark:hover:bg-zinc-800",
-              focusRing
-            )}
-          >
-            {loadingMore ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                Loading…
-              </>
-            ) : (
-              `Load more (${rows.length.toLocaleString()} of ${total.toLocaleString()})`
-            )}
-          </button>
+      {!isPreview && paginate && (hasMore || rows.length > 0) && !loadingCategory ? (
+        <div className="flex flex-col items-center gap-2 border-t border-zinc-200 px-4 py-4 dark:border-zinc-800">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Showing {rows.length.toLocaleString()} of {total.toLocaleString()}
+          </p>
+          {hasMore ? (
+            <button
+              type="button"
+              onClick={() => void handleLoadMore()}
+              disabled={loadingMore}
+              className={cn(
+                "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-6 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-200 dark:hover:bg-zinc-800",
+                focusRing
+              )}
+            >
+              {loadingMore ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  Loading…
+                </>
+              ) : (
+                "Load more"
+              )}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -541,6 +541,33 @@ function ActivityPreviewDesktopRow({
   );
 }
 
+function ActivityActionChips({ actions }: { actions: string | null }) {
+  const chips = parseActionChips(actions);
+  if (chips.length > 0) {
+    return (
+      <div className="flex flex-wrap gap-1">
+        {chips.map((chip) => (
+          <span
+            key={chip}
+            className="inline-flex rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300"
+          >
+            {chip}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  const fallback = (actions ?? "").replace(/\s*\[UNDONE\]\s*/gi, "").trim();
+  if (!fallback) return null;
+
+  return (
+    <span className="line-clamp-2 text-xs text-zinc-500 dark:text-zinc-400" title={fallback}>
+      {truncateText(fallback, 48)}
+    </span>
+  );
+}
+
 function ActivityDesktopRow({
   row,
   undoState,
@@ -553,6 +580,8 @@ function ActivityDesktopRow({
   const undone = isUndone(row.actions_taken);
   const acctEmail = row.accounts?.email ?? "";
   const { displayName, address } = parseSender(row.sender);
+  const senderLine =
+    address && address !== displayName ? address : displayName;
 
   return (
     <tr
@@ -561,7 +590,7 @@ function ActivityDesktopRow({
       }`}
     >
       <td
-        className="px-3 py-3 text-xs whitespace-nowrap text-zinc-500 dark:text-zinc-400 sm:px-4"
+        className="px-3 py-2.5 text-xs whitespace-nowrap text-zinc-500 dark:text-zinc-400 sm:px-4"
         title={
           row.message_received_at
             ? `Processed ${formatMailpilotDateUtc(row.processed_at)}`
@@ -570,7 +599,7 @@ function ActivityDesktopRow({
       >
         {formatMailpilotDateUtc(row.message_received_at ?? row.processed_at)}
       </td>
-      <td className="px-3 py-3 whitespace-nowrap sm:px-4">
+      <td className="px-2 py-2.5">
         <div
           className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${accountAvatarClass(acctEmail)}`}
           title={acctEmail || undefined}
@@ -578,39 +607,35 @@ function ActivityDesktopRow({
           {accountInitial(acctEmail)}
         </div>
       </td>
-      <td className="max-w-[200px] px-3 py-3 sm:max-w-[220px] sm:px-4">
+      <td className="min-w-0 px-3 py-2.5 sm:px-4">
         <div className="min-w-0">
           <p
-            className="truncate font-semibold text-zinc-900 dark:text-zinc-50"
+            className="truncate font-medium text-zinc-900 dark:text-zinc-50"
+            title={row.subject ?? ""}
+          >
+            {row.subject ? truncateText(row.subject, 80) : "(no subject)"}
+          </p>
+          <p
+            className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400"
             title={row.sender ?? ""}
           >
-            {truncateText(displayName, 40)}
+            {truncateText(senderLine, 56)}
           </p>
-          {address && address !== displayName ? (
-            <p
-              className="truncate text-xs text-zinc-500 dark:text-zinc-400"
-              title={address}
-            >
-              {address}
-            </p>
-          ) : null}
         </div>
       </td>
-      <td className="max-w-[220px] px-3 py-3 text-zinc-800 dark:text-zinc-100 sm:px-4">
-        <span className="line-clamp-2" title={row.subject ?? ""}>
-          {truncateText(row.subject, 56)}
-        </span>
-      </td>
-      <td className="px-3 py-3 whitespace-nowrap sm:px-4">
+      <td className="px-3 py-2.5 whitespace-nowrap sm:px-4">
         <CategoryPill category={row.category} />
       </td>
-      <td className="max-w-[200px] px-3 py-3 text-xs text-zinc-500 dark:text-zinc-400 sm:px-4">
-        <span className="line-clamp-2" title={row.actions_taken ?? ""}>
-          {truncateText(row.actions_taken, 52)}
-        </span>
+      <td className="min-w-0 px-3 py-2.5 sm:px-4">
+        <ActivityActionChips actions={row.actions_taken} />
       </td>
-      <td className="px-3 py-3 whitespace-nowrap sm:px-4">
-        <UndoActionButton row={row} state={undoState} onUndo={onUndo} />
+      <td className="px-3 py-2.5 whitespace-nowrap sm:px-4">
+        <UndoActionButton
+          row={row}
+          state={undoState}
+          onUndo={onUndo}
+          size="compact"
+        />
       </td>
     </tr>
   );

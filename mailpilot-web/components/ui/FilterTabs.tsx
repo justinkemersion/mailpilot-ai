@@ -45,7 +45,7 @@ export function FilterTabs({
               focusRing,
               active
                 ? "bg-indigo-600 text-white dark:bg-indigo-500"
-                : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                : "border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
             )}
           >
             {option.label}

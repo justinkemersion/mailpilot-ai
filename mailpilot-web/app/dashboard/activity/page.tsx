@@ -17,13 +17,12 @@ export default async function ActivityPage() {
 
   return (
     <section>
-      <div className="mb-4">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+      <div className="mb-5">
+        <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
           Email activity
         </h2>
-        <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-          Processed mail across all connected accounts. Search and filter, then load
-          more to browse history.
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          Search and filter processed mail, then load more to browse your full history.
         </p>
       </div>
       <EmailActivityTable

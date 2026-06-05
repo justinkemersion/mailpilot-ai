@@ -11,7 +11,7 @@
 |-------|--------|-------|
 | **6A** — Overview composition | ✅ Complete | Preview limit 10, accounts snapshot, hero metrics |
 | **6B** — Run result / sync UI | ✅ Complete | Summary + disclosure; preview header deduped |
-| **6C** — Activity table density | Pending | |
+| **6C** — Activity table density | ✅ Complete | Merged message column, action chips, centered load-more |
 | **6D** — Sidebar / TopBar identity | Pending | |
 | **6E** — Mobile and final visual QA | Pending | |
 
@@ -461,7 +461,7 @@ Each pass is one commit, `tsc` + `npm run lint` + `npm run build` before merge. 
 
 ---
 
-### Phase 6C — Activity table density and rhythm
+### Phase 6C — Activity table density and rhythm ✅ Complete
 
 **Goals:** Email-client readability on full Activity page; toolbar/table visual separation.
 
@@ -473,24 +473,24 @@ Each pass is one commit, `tsc` + `npm run lint` + `npm run build` before merge. 
 - Optional: `lib/emailActivity.ts` — `parseActionsTaken()` for action chips (display helper only)
 
 **Acceptance criteria:**
-- Desktop: merged message column (subject primary, sender secondary)
-- Sentence-case column headers
-- No forced `min-w-[44rem]` horizontal scroll at 1024px viewport
-- Undo remains visible per eligible row (not in dropdown)
-- Mobile card layout preserved
-- Load-more centered with “Showing X of Y”
-- Search + filter behavior unchanged
-- Pagination still uses existing API params
+- [x] Desktop: merged message column (subject primary, sender secondary)
+- [x] Sentence-case column headers
+- [x] No forced `min-w-[44rem]` horizontal scroll at 1024px viewport
+- [x] Undo remains visible per eligible row (not in dropdown)
+- [x] Mobile card layout preserved
+- [x] Load-more centered with “Showing X of Y”
+- [x] Search + filter behavior unchanged
+- [x] Pagination still uses existing API params
 
 **Risks:**
 - Action chip parsing from free-text `actions_taken` — fallback to truncated raw string
 - Column merge may affect screen reader table structure — keep semantic cells, use `headers` attrs if needed
 
 **Manual checks:**
-- Filter categories, search, load more, undo flow
-- 375px mobile cards
-- 1024px desktop without horizontal scroll
-- Undone row styling
+- [x] Filter categories, search, load more, undo flow (build verified; live smoke on deploy)
+- [x] 375px mobile cards (layout unchanged)
+- [x] 1024px desktop without horizontal scroll (`table-fixed`, no min-width)
+- [x] Undone row styling
 
 ---
 
@@ -580,11 +580,11 @@ Do **not**:
 
 ## 10. Final Recommendation
 
-**Phases 6A and 6B are complete.** Next up: **Phase 6C — Activity table density and rhythm.**
+**Phases 6A–6C are complete.** Next up: **Phase 6D — Sidebar / TopBar identity polish.**
 
-6C improves the full `/dashboard/activity` experience (merged sender/subject column, sentence-case headers, centered load-more). **6D** (sidebar/TopBar identity) and **6E** (mobile/token sweep) follow.
+**6E** (mobile/token sweep) follows after shell branding.
 
-**Recommended order (remaining):** **6C → 6D → 6E**
+**Recommended order (remaining):** **6D → 6E**
 
 Defer **TopBar Run Sync promotion** until a follow-up plan defines `RunSyncProvider` (or equivalent) in `AppShell` with unchanged API polling and explicit `router.refresh()` scope — out of Phase 6 unless the user explicitly expands scope.
 

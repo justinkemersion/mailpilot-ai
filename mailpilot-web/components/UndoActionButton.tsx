@@ -15,21 +15,30 @@ interface UndoActionButtonProps {
   row: ProcessedEmailRow;
   state: UndoButtonState;
   onUndo: (row: ProcessedEmailRow) => void;
+  size?: "default" | "compact";
 }
 
-export function UndoActionButton({ row, state, onUndo }: UndoActionButtonProps) {
+export function UndoActionButton({
+  row,
+  state,
+  onUndo,
+  size = "default",
+}: UndoActionButtonProps) {
   const undone = isUndone(row.actions_taken);
   const undoable = canUndo(row);
 
   if (undoable && !undone) {
-    return (
+    const button = (
       <button
         type="button"
         onClick={() => onUndo(row)}
         disabled={state === "pending"}
         aria-label="Undo Gmail changes for this message"
         className={cn(
-          "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-600 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800",
+          "inline-flex shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-600 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800",
+          size === "compact"
+            ? "h-9 w-9"
+            : "min-h-11 min-w-11",
           focusRing
         )}
       >
@@ -40,6 +49,16 @@ export function UndoActionButton({ row, state, onUndo }: UndoActionButtonProps) 
         )}
       </button>
     );
+
+    if (size === "compact") {
+      return (
+        <span className="inline-flex min-h-11 min-w-11 items-center justify-center">
+          {button}
+        </span>
+      );
+    }
+
+    return button;
   }
 
   if (state === "error") {

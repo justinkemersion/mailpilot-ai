@@ -29,7 +29,7 @@ export function SearchInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className={cn(
-          "min-h-11 w-full rounded-lg border border-zinc-200 bg-white py-2 pr-10 pl-9 text-sm",
+          "min-h-11 w-full rounded-lg border border-zinc-200 bg-zinc-50 py-2 pr-10 pl-9 text-sm",
           "text-zinc-900 placeholder:text-zinc-400",
           focusRing,
           "dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
