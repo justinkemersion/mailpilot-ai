@@ -11,6 +11,19 @@ Production layout on a single host:
 
 The runner does not need the Docker `flux-network`; it talks to Flux and Gmail over HTTPS.
 
+## Web demo mode (showcase only)
+
+The dashboard supports an optional **demo posture** for public showcases. Controlled by **server-only** env:
+
+```bash
+MAILPILOT_DEMO_MODE=true          # fixture data; blocks mutations — never in production
+NEXT_PUBLIC_DEMO_BANNER=true      # optional dismissible banner (UI only)
+```
+
+**Production:** `MAILPILOT_DEMO_MODE` must be **absent or `false`** in `.env.docker` and any host env. Demo mode must not be enabled on the live personal instance unless you intend a read-only public demo.
+
+Details: [`mailpilot-web/README.md`](../mailpilot-web/README.md#demo--showcase-mode).
+
 ## systemd runner (recommended)
 
 ### 1. Prepare environment

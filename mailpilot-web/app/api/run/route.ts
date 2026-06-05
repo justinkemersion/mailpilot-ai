@@ -1,4 +1,6 @@
 import { getCurrentUser } from "@/lib/auth/session";
+import { blockIfDemoMode } from "@/lib/demo/guard";
+import { getDemoLatestJob, isDemoMode } from "@/lib/demo";
 import { fluxFetch, fluxJson, postgrestParams } from "@/lib/flux/client";
 import type { ClassifierInfo } from "@/lib/formatClassifier";
 import { NextResponse } from "next/server";
@@ -66,6 +68,9 @@ function isUniqueViolation(status: number, detail: string): boolean {
  * Creates a pending run_job for the authenticated user.
  */
 export async function POST(request: Request) {
+  const blocked = blockIfDemoMode();
+  if (blocked) return blocked;
+
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -129,6 +134,10 @@ export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  if (isDemoMode()) {
+    return NextResponse.json(getDemoLatestJob());
   }
 
   const url = new URL(request.url);

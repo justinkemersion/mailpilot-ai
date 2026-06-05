@@ -1,3 +1,4 @@
+import { isDemoMode } from "@/lib/demo";
 import { NextResponse } from "next/server";
 
 const SCOPES = [
@@ -19,12 +20,20 @@ export async function GET() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
 
-  if (!clientId || !appUrl) {
+  if (!appUrl) {
     return NextResponse.json(
-      {
-        error:
-          "GOOGLE_CLIENT_ID or NEXT_PUBLIC_APP_URL is not set in environment.",
-      },
+      { error: "NEXT_PUBLIC_APP_URL is not set in environment." },
+      { status: 500 }
+    );
+  }
+
+  if (isDemoMode()) {
+    return NextResponse.redirect(`${appUrl}/dashboard/overview?demo=true`);
+  }
+
+  if (!clientId) {
+    return NextResponse.json(
+      { error: "GOOGLE_CLIENT_ID is not set in environment." },
       { status: 500 }
     );
   }

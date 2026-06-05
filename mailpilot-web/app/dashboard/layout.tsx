@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/AppShell";
 import { getCurrentUser } from "@/lib/auth/session";
+import { isDemoBannerEnabled } from "@/lib/demo";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
@@ -12,7 +13,10 @@ export default async function DashboardLayout({
   if (!user) redirect("/login");
 
   return (
-    <AppShell userLabel={user.email ?? user.name ?? user.id}>
+    <AppShell
+      userLabel={user.email ?? user.name ?? user.id}
+      showDemoBanner={isDemoBannerEnabled()}
+    >
       {children}
     </AppShell>
   );

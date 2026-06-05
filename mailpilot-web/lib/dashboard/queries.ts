@@ -5,6 +5,14 @@ import {
   type ProcessedEmailRow,
 } from "@/lib/emailActivity";
 import { CATEGORY_ORDER } from "@/lib/categories";
+import {
+  getDemoConnectedAccounts,
+  getDemoDashboardMetrics,
+  getDemoEmailActivityPage,
+  getDemoLastSyncedByAccount,
+  getDemoLatestJob,
+  isDemoMode,
+} from "@/lib/demo";
 import { fluxCount, fluxJson, postgrestParams } from "@/lib/flux/client";
 
 export type { ProcessedEmailRow };
@@ -48,6 +56,7 @@ async function countProcessedEmails(
 export async function getDashboardMetrics(
   userId: string
 ): Promise<DashboardMetrics> {
+  if (isDemoMode()) return getDemoDashboardMetrics();
   const [total_processed, total_archived, total_labeled, accounts, ...categoryCounts] =
     await Promise.all([
       countProcessedEmails(userId),
@@ -84,6 +93,7 @@ export async function getDashboardMetrics(
 export async function getLastSyncedByAccount(
   userId: string
 ): Promise<Record<number, string>> {
+  if (isDemoMode()) return getDemoLastSyncedByAccount();
   const rows = await fluxJson<Array<{ account_id: number; processed_at: string }>>(
     `/processed_emails${postgrestParams([
       ["select", "account_id,processed_at"],
@@ -105,6 +115,7 @@ export async function getLastSyncedByAccount(
 export async function getConnectedAccounts(
   userId: string
 ): Promise<ConnectedAccount[]> {
+  if (isDemoMode()) return getDemoConnectedAccounts();
   const rows = await fluxJson<ConnectedAccount[]>(
     `/accounts${postgrestParams([
       ["select", "id,email,display_name,active,processing_enabled"],
@@ -127,6 +138,7 @@ export async function getEmailActivityPage(
     category?: string | null;
   } = {}
 ): Promise<EmailActivityPage> {
+  if (isDemoMode()) return getDemoEmailActivityPage(options);
   const offset = Math.max(0, options.offset ?? 0);
   const limit = Math.min(100, Math.max(1, options.limit ?? EMAIL_ACTIVITY_PAGE_SIZE));
   const filters: Array<[string, string]> = [userFilter(userId)];
@@ -163,6 +175,7 @@ export async function getEmailHistory(
 }
 
 export async function getLatestJob(userId: string): Promise<RunJobRow | null> {
+  if (isDemoMode()) return getDemoLatestJob();
   const rows = await fluxJson<RunJobRow[]>(
     `/run_jobs${postgrestParams([
       [

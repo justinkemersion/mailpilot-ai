@@ -5,14 +5,20 @@ import { pageTitleForPath, Sidebar } from "@/components/Sidebar";
 import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
-import { useCallback, useState, type ReactNode } from "react";
+import { Suspense, useCallback, useState, type ReactNode } from "react";
+import { DemoBanner } from "@/components/DemoBanner";
 
 interface AppShellProps {
   userLabel: string;
+  showDemoBanner?: boolean;
   children: ReactNode;
 }
 
-export function AppShell({ userLabel, children }: AppShellProps) {
+export function AppShell({
+  userLabel,
+  showDemoBanner = false,
+  children,
+}: AppShellProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const title = pageTitleForPath(pathname);
@@ -36,6 +42,9 @@ export function AppShell({ userLabel, children }: AppShellProps) {
           userLabel={userLabel}
           onMenuOpen={() => setMobileOpen(true)}
         />
+        <Suspense fallback={null}>
+          <DemoBanner showEnvBanner={showDemoBanner} />
+        </Suspense>
         <main
           id="dashboard-main"
           className="mx-auto w-full max-w-5xl flex-1 space-y-8 px-4 py-8 sm:px-6 sm:py-10"

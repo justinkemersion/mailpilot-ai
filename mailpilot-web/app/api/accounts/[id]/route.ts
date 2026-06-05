@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth/session";
+import { blockIfDemoMode } from "@/lib/demo/guard";
 import { fluxJson, postgrestParams } from "@/lib/flux/client";
 import { NextResponse } from "next/server";
 
@@ -26,6 +27,9 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const blocked = blockIfDemoMode();
+  if (blocked) return blocked;
+
   const { id: idParam } = await context.params;
   const accountId = parseAccountId(idParam);
   if (accountId === null) {
@@ -96,6 +100,9 @@ export async function DELETE(
   _request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const blocked = blockIfDemoMode();
+  if (blocked) return blocked;
+
   const { id: idParam } = await context.params;
   const accountId = parseAccountId(idParam);
   if (accountId === null) {

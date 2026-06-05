@@ -1,6 +1,6 @@
 # MailPilot UI Upgrade Plan
 > Upgrading from a functional internal dashboard to a polished Flux showcase app.
-> Status: Amended — Phase 1A approved for implementation.
+> Status: Complete — Phases 1A–5 implemented.
 
 ---
 

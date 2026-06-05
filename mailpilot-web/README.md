@@ -1,12 +1,21 @@
 # MailPilot Web
 
-Next.js **App Router** app: **Supabase Auth**, **Google OAuth** (Gmail refresh tokens stored in Supabase), **dashboard** (connected accounts, email history, “Process inbox”, undo).
+Next.js dashboard for **MailPilot AI** — personal email automation with Gmail connect, AI classification, processing history, and undo.
 
-## How it fits the monorepo
+## Architecture
 
-The web app is the **control plane**. It does **not** run the Python classifier or bulk Gmail processing. Those run in [`mailpilot-runner`](../mailpilot-runner). The two communicate through **Supabase** (e.g. `run_jobs`, `processed_emails`, `accounts`). Rationale and tradeoffs: [root `README.md`](../README.md#standalone-runner--web-app-why-this-pattern).
+The web app is the **control plane**. Classification and Gmail processing run in [`mailpilot-runner`](../mailpilot-runner). Data is stored in **Flux** (PostgREST `api` schema). App login uses **NextAuth**; Gmail mailbox OAuth is a separate flow at `/auth/google`.
 
-Boundaries and migration notes: [`ARCHETECTURE.md`](./ARCHETECTURE.md).
+See [root `README.md`](../README.md) and [`ARCHETECTURE.md`](./ARCHETECTURE.md).
+
+## Dashboard routes
+
+| Route | Purpose |
+|-------|---------|
+| `/dashboard/overview` | Metrics, classifier status, manual sync, accounts, recent activity |
+| `/dashboard/accounts` | Connected Gmail accounts |
+| `/dashboard/activity` | Full email history with search, filters, pagination |
+| `/dashboard/settings` | Settings (stub) |
 
 ## Setup
 
@@ -18,20 +27,19 @@ Boundaries and migration notes: [`ARCHETECTURE.md`](./ARCHETECTURE.md).
 
    Fill in at least:
 
-   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY` (server-only; required for some API routes such as job status hydration)
-   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_APP_URL` (must match Google Cloud OAuth redirect URIs)
+   - `AUTH_SECRET`, `NEXTAUTH_URL`, `NEXT_PUBLIC_APP_URL`
+   - `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` (and/or Google sign-in vars)
+   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (Gmail connect)
+   - `NEXT_PUBLIC_FLUX_URL`, `FLUX_SERVICE_TOKEN`
 
-2. **Install and dev server**
+2. **Install and dev**
 
    ```bash
    npm install
    npm run dev
    ```
 
-3. **Database** — Apply [`supabase/schema.sql`](./supabase/schema.sql) (and any [`supabase/migrations/`](./supabase/migrations/) files) in the Supabase SQL Editor, or use the Supabase CLI if the project is linked.
-
-4. **Processing email** — Link Gmail in the UI, then run the Python worker, e.g.:
+3. **Runner** — Link Gmail in the UI, then run the worker:
 
    ```bash
    cd ../mailpilot-runner
@@ -39,19 +47,38 @@ Boundaries and migration notes: [`ARCHETECTURE.md`](./ARCHETECTURE.md).
    python -m mailpilot.main watch-jobs
    ```
 
-   Use **Process inbox** on the dashboard to queue work; `watch-jobs` picks up `run_jobs`. Alternatively use `run-once` / `run` without the queue.
+   Use **Run sync** on the overview page to queue `run_jobs`.
+
+## Demo / showcase mode
+
+For a public Flux showcase without real mailbox data:
+
+```bash
+# .env.local or container env (server-only — never NEXT_PUBLIC_)
+MAILPILOT_DEMO_MODE=true
+NEXT_PUBLIC_DEMO_BANNER=true
+```
+
+When `MAILPILOT_DEMO_MODE=true`:
+
+- Server reads return fixture data from [`lib/demo.ts`](./lib/demo.ts) (no Flux calls for dashboard queries).
+- Mutations (`/api/run`, `/api/undo`, `/api/accounts/*`) return HTTP 403.
+- `/auth/google` redirects to `/dashboard/overview?demo=true` instead of starting OAuth.
+
+**Production deployments must leave `MAILPILOT_DEMO_MODE` unset or `false`.** See [`deploy/README.md`](../deploy/README.md).
 
 ## Scripts
 
 | Command | Purpose |
 |--------|---------|
-| `npm run dev` | Local dev (Turbopack per project config) |
-| `npm run build` / `npm start` | Production build and serve |
+| `npm run dev` | Local dev |
+| `npm run build` / `npm start` | Production |
 | `npm run lint` | ESLint |
 
-Optional: `npx tsx --env-file=.env.local scripts/test-supabase.ts` — quick connectivity check (see script header).
+## Screenshots
 
-## Learn More
+Capture curated dashboard images into [`public/screenshots/`](./public/screenshots/) for README/marketing (see that folder’s README).
 
-- [Next.js documentation](https://nextjs.org/docs)
-- [Supabase + Next.js](https://supabase.com/docs/guides/getting-started/tutorials/with-nextjs)
+## UI upgrade plan
+
+Implementation phases and design notes: [`plans/mailpilot-ui-upgrade-plan.md`](../plans/mailpilot-ui-upgrade-plan.md).
