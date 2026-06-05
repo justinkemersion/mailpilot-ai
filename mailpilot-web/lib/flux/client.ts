@@ -67,3 +67,16 @@ export async function fluxJson<T>(
   }
   return (await res.json()) as T;
 }
+
+/** Exact row count via PostgREST `Prefer: count=exact` (HEAD). */
+export async function fluxCount(path: string): Promise<number | null> {
+  const res = await fluxFetch(path, {
+    method: "HEAD",
+    headers: { Prefer: "count=exact" },
+  });
+  if (!res.ok) return null;
+  const range = res.headers.get("Content-Range");
+  if (!range) return null;
+  const match = range.match(/\/(\d+)$/);
+  return match ? Number.parseInt(match[1], 10) : null;
+}

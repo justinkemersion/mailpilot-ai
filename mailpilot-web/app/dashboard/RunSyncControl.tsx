@@ -4,20 +4,16 @@ import type {
   RunJobProgress,
   RunJobRow,
 } from "@/app/api/run/route";
+import { RunResultBanner } from "@/components/RunResultBanner";
+import { RunSyncButton, type RunSyncOptions } from "@/components/RunSyncButton";
 import { classifierLabel } from "@/lib/formatClassifier";
-import { Cpu, Loader2, RefreshCw, X } from "lucide-react";
+import { Cpu, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type JobStatus = RunJobRow["status"] | "idle";
 
-interface RunOptions {
-  newer_than_days: number;
-  include_read: boolean;
-  dry_run: boolean;
-}
-
-const DEFAULT_OPTIONS: RunOptions = {
+const DEFAULT_OPTIONS: RunSyncOptions = {
   newer_than_days: 7,
   include_read: false,
   dry_run: false,
@@ -75,7 +71,7 @@ function ClassifierSourceBadge({
             aria-hidden
           />
         )}
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+        <span className="text-[10px] font-semibold tracking-wide text-indigo-700 uppercase dark:text-indigo-300">
           AI classifier
         </span>
       </div>
@@ -124,82 +120,6 @@ function StatusIndicator({ status }: { status: JobStatus }) {
   return null;
 }
 
-function ResultSummary({ job }: { job: RunJobRow | null }) {
-  if (!job) return null;
-
-  if (job.status === "done" && job.result) {
-    const r = job.result;
-    const isDry = r.dry_run;
-    const prefix = isDry ? "Would have: " : "";
-    return (
-      <div className="space-y-2">
-        {r.ai_limit_hit ? (
-          <div
-            className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/80"
-            role="alert"
-          >
-            <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
-              AI limit reached
-            </p>
-            <p className="mt-0.5 text-xs text-amber-800 dark:text-amber-300">
-              {r.ai_limit_message ??
-                "Your AI provider rate or usage limit was hit during this run."}
-            </p>
-            {(r.skipped_by_ai_limit ?? 0) > 0 ? (
-              <p className="mt-0.5 text-xs text-amber-800 dark:text-amber-300">
-                {r.skipped_by_ai_limit} message(s) were not classified because of the limit.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 dark:border-green-800 dark:bg-green-950/80">
-          <p className="text-xs font-medium text-green-800 dark:text-green-300">
-            Run complete
-            {isDry && (
-              <span className="ml-1.5 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] dark:bg-green-900">
-                dry run
-              </span>
-            )}
-          </p>
-          <p className="mt-0.5 text-xs text-green-700 dark:text-green-400">
-            {r.accounts_processed ?? 0} account(s) · {r.candidates ?? 0} messages ·{" "}
-            {r.processed ?? 0} processed. {prefix}Labels: {r.labels_applied ?? 0}, archived:{" "}
-            {r.archived ?? 0}, spam: {r.spam_marked ?? 0}.
-          </p>
-          <p className="mt-0.5 text-xs text-green-700 dark:text-green-400">
-            LLM calls: {r.llm_calls ?? 0}, rule-based: {r.prefiltered ?? 0}, skipped by budget:{" "}
-            {r.skipped_by_budget ?? 0}
-            {(r.skipped_by_ai_limit ?? 0) > 0
-              ? `, skipped by AI limit: ${r.skipped_by_ai_limit}`
-              : ""}
-            .
-          </p>
-          {classifierLabel(r) && (
-            <p className="mt-1 text-xs font-medium text-green-800 dark:text-green-300">
-              AI classifier: {classifierLabel(r)}
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (job.status === "failed") {
-    return (
-      <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 dark:border-red-800 dark:bg-red-950/80">
-        <p className="text-xs font-medium text-red-700 dark:text-red-400">Run failed</p>
-        {job.error && (
-          <p className="mt-0.5 break-all font-mono text-[10px] text-red-600 dark:text-red-500">
-            {job.error}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  return null;
-}
-
 function ActivityLog({ entries }: { entries: RunJobProgress[] }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const lastKeyRef = useRef<string>("");
@@ -224,12 +144,12 @@ function ActivityLog({ entries }: { entries: RunJobProgress[] }) {
 
   return (
     <div className="min-h-0 w-full min-w-0">
-      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+      <p className="mb-1.5 text-[10px] font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
         Activity
       </p>
       <div
         ref={scrollerRef}
-        className="max-h-44 min-h-[5.5rem] overflow-y-auto overflow-x-hidden scroll-smooth rounded-md border border-zinc-200 bg-zinc-50/90 px-2.5 py-2 overscroll-y-contain dark:border-zinc-700 dark:bg-zinc-950/50"
+        className="max-h-44 min-h-[5.5rem] overflow-x-hidden overflow-y-auto scroll-smooth rounded-md border border-zinc-200 bg-zinc-50/90 px-2.5 py-2 overscroll-y-contain dark:border-zinc-700 dark:bg-zinc-950/50"
         aria-live="polite"
         role="log"
         aria-relevant="additions"
@@ -268,11 +188,11 @@ interface Props {
 export function RunSyncControl({ initialJob, variant = "default" }: Props) {
   const router = useRouter();
   const [job, setJob] = useState<RunJobRow | null>(initialJob);
-  const [options, setOptions] = useState<RunOptions>(DEFAULT_OPTIONS);
+  const [options, setOptions] = useState<RunSyncOptions>(DEFAULT_OPTIONS);
   const [submitting, setSubmitting] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
   const [activityLog, setActivityLog] = useState<RunJobProgress[]>([]);
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [dismissedJobId, setDismissedJobId] = useState<number | null>(null);
   const prevJobRef = useRef<{ id: number; status: RunJobRow["status"] } | null>(
     null
   );
@@ -304,6 +224,7 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
     if (prev && prev.id === job.id) {
       const wasActive = prev.status === "pending" || prev.status === "running";
       if (wasActive && job.status === "done") {
+        setDismissedJobId(null);
         router.refresh();
       }
     }
@@ -365,14 +286,11 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
     return () => clearTimeout(t);
   }, [activeJobId, refreshJob]);
 
-  function closeModal() {
-    dialogRef.current?.close();
-  }
-
   async function handleRun() {
     setSubmitting(true);
     setTimedOut(false);
     setActivityLog([]);
+    setDismissedJobId(null);
     try {
       const res = await fetch("/api/run", {
         method: "POST",
@@ -382,7 +300,6 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const newJob = (await res.json()) as RunJobRow;
       setJob(newJob);
-      closeModal();
     } catch (err) {
       console.error("Failed to queue run:", err);
     } finally {
@@ -394,6 +311,8 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
     job?.status === "pending" || job?.status === "running" ? job.status : "idle";
   const isActive = currentStatus === "pending" || currentStatus === "running";
   const isFinished = job?.status === "done" || job?.status === "failed";
+  const showResult =
+    isFinished && job != null && dismissedJobId !== job.id;
 
   const classifierLabelActive =
     classifierLabelFromActivity(activityLog) ??
@@ -402,17 +321,12 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
     !isActive && !classifierLabelActive ? classifierLabelFromJob(job) : null;
 
   const isSection = variant === "section";
-  const buttonClass = isSection
-    ? "inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[9rem] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
-    : "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[7.5rem] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700";
-
   const rootClass = isSection
     ? "flex w-full min-w-0 flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-none"
     : "flex w-full min-w-0 flex-col gap-2";
 
   return (
     <div className={rootClass}>
-      {/* Same DOM for default + section so SSR and client always match (avoid hydration mismatch). */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div
           className={isSection ? "min-w-0" : "hidden min-w-0"}
@@ -429,120 +343,14 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
             ). Classifier is configured on the server and reported per run.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => dialogRef.current?.showModal()}
-          disabled={submitting || isActive}
-          className={buttonClass}
-        >
-          <RefreshCw className="h-4 w-4 shrink-0" aria-hidden />
-          {submitting ? "Queuing…" : isActive ? "Running…" : "Run sync"}
-        </button>
+        <RunSyncButton
+          options={options}
+          onOptionsChange={setOptions}
+          submitting={submitting}
+          isActive={isActive}
+          onRun={handleRun}
+        />
       </div>
-
-      <dialog
-        ref={dialogRef}
-        className="fixed left-1/2 top-1/2 z-50 m-0 w-[min(calc(100vw-2rem),24rem)] max-h-[min(90vh,32rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-black/50 open:flex open:flex-col dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-      >
-        <div className="flex items-start justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-              Run sync
-            </h2>
-            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-              Queue a run for the worker. Requires{" "}
-              <code className="rounded bg-zinc-100 px-1 text-[10px] dark:bg-zinc-800">
-                watch-jobs
-              </code>
-              .
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={closeModal}
-            className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="max-h-[60vh] space-y-4 overflow-y-auto px-4 py-4">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Look back
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="range"
-                min={1}
-                max={30}
-                value={options.newer_than_days}
-                onChange={(e) =>
-                  setOptions((o) => ({
-                    ...o,
-                    newer_than_days: Number(e.target.value),
-                  }))
-                }
-                className="min-w-0 flex-1 accent-indigo-600"
-              />
-              <span className="w-10 shrink-0 text-right text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-                {options.newer_than_days}d
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-x-4">
-            <label className="flex min-h-11 cursor-pointer items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              <input
-                type="checkbox"
-                checked={options.include_read}
-                onChange={(e) =>
-                  setOptions((o) => ({ ...o, include_read: e.target.checked }))
-                }
-                className="h-4 w-4 rounded border-zinc-300 accent-indigo-600"
-              />
-              Include read
-            </label>
-            <label className="flex min-h-11 cursor-pointer items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              <input
-                type="checkbox"
-                checked={options.dry_run}
-                onChange={(e) =>
-                  setOptions((o) => ({ ...o, dry_run: e.target.checked }))
-                }
-                className="h-4 w-4 rounded border-zinc-300 accent-indigo-600"
-              />
-              Dry run
-            </label>
-          </div>
-        </div>
-
-        <div className="flex flex-col-reverse gap-2 border-t border-zinc-200 px-4 py-3 sm:flex-row sm:justify-end dark:border-zinc-800">
-          <button
-            type="button"
-            onClick={closeModal}
-            className="min-h-11 rounded-lg border border-zinc-200 px-4 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleRun()}
-            disabled={submitting || isActive}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500 dark:hover:bg-indigo-400"
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Starting…
-              </>
-            ) : (
-              "Start sync"
-            )}
-          </button>
-        </div>
-      </dialog>
 
       <div
         className={`flex min-w-0 flex-col gap-3${isSection ? " border-t border-zinc-100 pt-3 dark:border-zinc-800" : ""}`}
@@ -570,7 +378,12 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
         {(isActive || activityLog.length > 0) && (
           <ActivityLog entries={activityLog} />
         )}
-        {isFinished && <ResultSummary job={job} />}
+        {showResult && job ? (
+          <RunResultBanner
+            job={job}
+            onDismiss={() => setDismissedJobId(job.id)}
+          />
+        ) : null}
       </div>
     </div>
   );

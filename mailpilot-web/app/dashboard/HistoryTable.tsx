@@ -1,6 +1,7 @@
 "use client";
 
 import { CategoryPill } from "@/components/ui/CategoryPill";
+import { accountAvatarClass, accountInitial } from "@/lib/accountAvatar";
 import { sortCategoriesUnique } from "@/lib/categories";
 import { formatMailpilotDateUtc } from "@/lib/formatMailpilotDate";
 import { Loader2, Undo2 } from "lucide-react";
@@ -20,38 +21,6 @@ export interface ProcessedEmailRow {
   actions_taken: string | null;
   was_archived: boolean;
   applied_label_names: string | null;
-}
-
-const AVATAR_PALETTE = [
-  "bg-violet-600 text-white",
-  "bg-sky-600 text-white",
-  "bg-emerald-600 text-white",
-  "bg-amber-600 text-white",
-  "bg-rose-600 text-white",
-  "bg-cyan-600 text-white",
-  "bg-fuchsia-600 text-white",
-  "bg-lime-700 text-white",
-];
-
-function hashString(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h);
-}
-
-function accountInitial(email: string | undefined | null): string {
-  if (!email) return "?";
-  const local = email.split("@")[0]?.trim() || email;
-  const ch = local[0];
-  return ch ? ch.toUpperCase() : "?";
-}
-
-function accountAvatarClass(email: string | undefined | null): string {
-  if (!email) return "bg-zinc-500 text-white";
-  const idx = hashString(email.toLowerCase()) % AVATAR_PALETTE.length;
-  return AVATAR_PALETTE[idx] ?? AVATAR_PALETTE[0];
 }
 
 /** Parse From-style strings: "Name" <a@b>, Name <a@b>, a@b */

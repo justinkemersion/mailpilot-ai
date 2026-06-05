@@ -1,9 +1,14 @@
+import { ClassifierStatusCard } from "@/components/ClassifierStatusCard";
+import { OverviewMetricsGrid } from "@/components/OverviewMetricsGrid";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
   getConnectedAccounts,
+  getDashboardMetrics,
   getEmailHistory,
+  getLastSyncedByAccount,
   getLatestJob,
 } from "@/lib/dashboard/queries";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ConnectGmailLink } from "../ConnectGmailLink";
 import { ConnectedAccountsList } from "../ConnectedAccountsList";
@@ -18,11 +23,14 @@ export default async function OverviewPage({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [accounts, history, latestJob] = await Promise.all([
-    getConnectedAccounts(user.id),
-    getEmailHistory(user.id),
-    getLatestJob(user.id),
-  ]);
+  const [accounts, history, latestJob, metrics, lastSyncedByAccount] =
+    await Promise.all([
+      getConnectedAccounts(user.id),
+      getEmailHistory(user.id),
+      getLatestJob(user.id),
+      getDashboardMetrics(user.id),
+      getLastSyncedByAccount(user.id),
+    ]);
 
   const params = await searchParams;
   const justConnected = params.connected === "true";
@@ -41,6 +49,13 @@ export default async function OverviewPage({
         </div>
       )}
 
+      <OverviewMetricsGrid metrics={metrics} />
+
+      <section className="grid gap-4 lg:grid-cols-2">
+        <ClassifierStatusCard job={latestJob} />
+        <RunSyncControl initialJob={latestJob} variant="section" />
+      </section>
+
       <section>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="min-w-0">
@@ -54,10 +69,6 @@ export default async function OverviewPage({
           <ConnectGmailLink />
         </div>
 
-        <div className="mb-6">
-          <RunSyncControl initialJob={latestJob} variant="section" />
-        </div>
-
         {accounts.length === 0 ? (
           <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-6 py-12 text-center dark:border-zinc-700 dark:bg-zinc-900">
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -68,18 +79,29 @@ export default async function OverviewPage({
             </p>
           </div>
         ) : (
-          <ConnectedAccountsList accounts={accounts} />
+          <ConnectedAccountsList
+            accounts={accounts}
+            lastSyncedByAccount={lastSyncedByAccount}
+          />
         )}
       </section>
 
       <section>
-        <div className="mb-4">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-            Email history
-          </h2>
-          <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-            Last 50 emails processed by MailPilot across all connected accounts.
-          </p>
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+              Recent activity
+            </h2>
+            <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+              Last 50 emails processed across all connected accounts.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/activity"
+            className="text-sm font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300"
+          >
+            View all activity →
+          </Link>
         </div>
         <HistoryTable rows={history} />
       </section>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { ConnectedAccountCard } from "@/components/ConnectedAccountCard";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -14,8 +14,10 @@ export interface ConnectedAccountItem {
 
 export function ConnectedAccountsList({
   accounts: initialAccounts,
+  lastSyncedByAccount = {},
 }: {
   accounts: ConnectedAccountItem[];
+  lastSyncedByAccount?: Record<number, string>;
 }) {
   const router = useRouter();
   const [processingById, setProcessingById] = useState<Record<number, boolean>>(
@@ -118,78 +120,19 @@ export function ConnectedAccountsList({
         </p>
       ) : null}
 
-      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {initialAccounts.map((account) => {
-          const enabled = processingById[account.id] ?? true;
-          const title = account.email;
-          const primary =
-            account.display_name?.trim() ||
-            account.email.split("@")[0] ||
-            account.email;
-          const isPatching = patchingId === account.id;
-          const isDeleting = deletingId === account.id;
-          const controlsDisabled = isPatching || isDeleting;
-
-          return (
-            <li
-              key={account.id}
-              className="flex items-center gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-900"
-            >
-              <div className="min-w-0 flex-1">
-                <p
-                  className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-50"
-                  title={title}
-                >
-                  {primary}
-                </p>
-                {account.display_name ? (
-                  <p
-                    className="truncate text-xs text-zinc-500 dark:text-zinc-400"
-                    title={title}
-                  >
-                    {account.email}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="flex shrink-0 items-center gap-2">
-                <span className="sr-only" id={`proc-label-${account.id}`}>
-                  Background processing for {account.email}
-                </span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={enabled}
-                  aria-busy={isPatching}
-                  aria-labelledby={`proc-label-${account.id}`}
-                  disabled={controlsDisabled}
-                  onClick={() => void toggleProcessing(account.id, !enabled)}
-                  className={`relative h-6 w-10 shrink-0 rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 ${
-                    enabled
-                      ? "bg-indigo-600 dark:bg-indigo-500"
-                      : "bg-zinc-300 dark:bg-zinc-600"
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                      enabled ? "translate-x-4" : "translate-x-0"
-                    }`}
-                  />
-                </button>
-
-                <button
-                  type="button"
-                  disabled={controlsDisabled}
-                  onClick={() => void onDisconnect(account.id)}
-                  className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-red-400"
-                  aria-label={`Disconnect ${account.email}`}
-                >
-                  <Trash2 className="h-4 w-4" strokeWidth={2} />
-                </button>
-              </div>
-            </li>
-          );
-        })}
+      <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {initialAccounts.map((account) => (
+          <ConnectedAccountCard
+            key={account.id}
+            account={account}
+            processingEnabled={processingById[account.id] ?? true}
+            lastSyncedAt={lastSyncedByAccount[account.id] ?? null}
+            isPatching={patchingId === account.id}
+            isDeleting={deletingId === account.id}
+            onToggle={(next) => void toggleProcessing(account.id, next)}
+            onDisconnect={() => void onDisconnect(account.id)}
+          />
+        ))}
       </ul>
     </div>
   );
