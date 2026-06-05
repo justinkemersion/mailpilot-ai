@@ -7,7 +7,6 @@ import {
 import { redirect } from "next/navigation";
 import { ConnectGmailLink } from "../ConnectGmailLink";
 import { ConnectedAccountsList } from "../ConnectedAccountsList";
-import { DashboardShell } from "../DashboardShell";
 import { HistoryTable } from "../HistoryTable";
 import { RunSyncControl } from "../RunSyncControl";
 
@@ -30,7 +29,7 @@ export default async function OverviewPage({
   const connectError = params.error;
 
   return (
-    <DashboardShell userLabel={user.email ?? user.name ?? user.id}>
+    <>
       {justConnected && (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400">
           Gmail account connected successfully.
@@ -84,6 +83,6 @@ export default async function OverviewPage({
         </div>
         <HistoryTable rows={history} />
       </section>
-    </DashboardShell>
+    </>
   );
 }

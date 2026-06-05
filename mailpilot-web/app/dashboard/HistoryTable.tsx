@@ -1,5 +1,7 @@
 "use client";
 
+import { CategoryPill } from "@/components/ui/CategoryPill";
+import { sortCategoriesUnique } from "@/lib/categories";
 import { formatMailpilotDateUtc } from "@/lib/formatMailpilotDate";
 import { Loader2, Undo2 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -19,26 +21,6 @@ export interface ProcessedEmailRow {
   was_archived: boolean;
   applied_label_names: string | null;
 }
-
-const CATEGORY_COLORS: Record<string, string> = {
-  important: "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-400",
-  work: "bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400",
-  personal: "bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-400",
-  newsletters: "bg-yellow-50 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400",
-  promotions: "bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-400",
-  receipts: "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-400",
-  spam: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400",
-};
-
-const CATEGORY_ORDER = [
-  "important",
-  "work",
-  "personal",
-  "newsletters",
-  "promotions",
-  "receipts",
-  "spam",
-];
 
 const AVATAR_PALETTE = [
   "bg-violet-600 text-white",
@@ -119,28 +101,8 @@ function canUndo(row: ProcessedEmailRow): boolean {
   return hasLabels || row.was_archived;
 }
 
-function sortCategoriesUnique(cats: string[]): string[] {
-  const seen = new Set<string>();
-  const fromOrder: string[] = [];
-  for (const c of CATEGORY_ORDER) {
-    if (cats.includes(c) && !seen.has(c)) {
-      seen.add(c);
-      fromOrder.push(c);
-    }
-  }
-  const rest = cats.filter((c) => !seen.has(c)).sort((a, b) => a.localeCompare(b));
-  return [...fromOrder, ...rest];
-}
-
 interface UndoState {
   [id: number]: "idle" | "pending" | "done" | "error";
-}
-
-function categoryBadgeClass(category: string): string {
-  return (
-    CATEGORY_COLORS[category] ??
-    "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-  );
 }
 
 function UndoControl({
@@ -324,11 +286,7 @@ export function HistoryTable({ rows: initialRows }: { rows: ProcessedEmailRow[] 
                     <UndoControl row={row} state={state} onUndo={handleUndo} />
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${categoryBadgeClass(row.category)}`}
-                    >
-                      {row.category}
-                    </span>
+                    <CategoryPill category={row.category} />
                   </div>
                   {row.subject ? (
                     <p
@@ -459,11 +417,7 @@ export function HistoryTable({ rows: initialRows }: { rows: ProcessedEmailRow[] 
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 sm:px-4">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${categoryBadgeClass(row.category)}`}
-                    >
-                      {row.category}
-                    </span>
+                    <CategoryPill category={row.category} />
                   </td>
                   <td className="max-w-[200px] px-3 py-3 text-xs text-zinc-500 dark:text-zinc-400 sm:px-4">
                     <span className="line-clamp-2" title={row.actions_taken ?? ""}>

@@ -1,14 +1,12 @@
 import { getCurrentUser } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
-import { DashboardShell } from "../DashboardShell";
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   return (
-    <DashboardShell userLabel={user.email ?? user.name ?? user.id}>
-      <section>
+    <section>
         <div className="mb-4">
           <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
             Settings
@@ -22,7 +20,6 @@ export default async function SettingsPage() {
             Settings are not available yet.
           </p>
         </div>
-      </section>
-    </DashboardShell>
+    </section>
   );
 }

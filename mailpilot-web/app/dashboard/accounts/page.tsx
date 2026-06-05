@@ -3,7 +3,6 @@ import { getConnectedAccounts } from "@/lib/dashboard/queries";
 import { redirect } from "next/navigation";
 import { ConnectGmailLink } from "../ConnectGmailLink";
 import { ConnectedAccountsList } from "../ConnectedAccountsList";
-import { DashboardShell } from "../DashboardShell";
 
 export default async function AccountsPage() {
   const user = await getCurrentUser();
@@ -12,8 +11,7 @@ export default async function AccountsPage() {
   const accounts = await getConnectedAccounts(user.id);
 
   return (
-    <DashboardShell userLabel={user.email ?? user.name ?? user.id}>
-      <section>
+    <section>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
@@ -38,7 +36,6 @@ export default async function AccountsPage() {
         ) : (
           <ConnectedAccountsList accounts={accounts} />
         )}
-      </section>
-    </DashboardShell>
+    </section>
   );
 }
