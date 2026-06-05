@@ -1,7 +1,20 @@
 import type { RunJobRow } from "@/app/api/run/route";
-import type { ProcessedEmailRow } from "@/app/dashboard/HistoryTable";
+import {
+  EMAIL_ACTIVITY_PAGE_SIZE,
+  EMAIL_ACTIVITY_SELECT,
+  type ProcessedEmailRow,
+} from "@/lib/emailActivity";
 import { CATEGORY_ORDER } from "@/lib/categories";
 import { fluxCount, fluxJson, postgrestParams } from "@/lib/flux/client";
+
+export type { ProcessedEmailRow };
+
+export interface EmailActivityPage {
+  rows: ProcessedEmailRow[];
+  total: number;
+  offset: number;
+  limit: number;
+}
 
 export interface ConnectedAccount {
   id: number;
@@ -106,22 +119,47 @@ export async function getConnectedAccounts(
   }));
 }
 
+export async function getEmailActivityPage(
+  userId: string,
+  options: {
+    offset?: number;
+    limit?: number;
+    category?: string | null;
+  } = {}
+): Promise<EmailActivityPage> {
+  const offset = Math.max(0, options.offset ?? 0);
+  const limit = Math.min(100, Math.max(1, options.limit ?? EMAIL_ACTIVITY_PAGE_SIZE));
+  const filters: Array<[string, string]> = [userFilter(userId)];
+  if (options.category) {
+    filters.push(["category", `eq.${options.category}`]);
+  }
+
+  const [rows, total] = await Promise.all([
+    fluxJson<ProcessedEmailRow[]>(
+      `/processed_emails${postgrestParams([
+        ["select", EMAIL_ACTIVITY_SELECT],
+        ...filters,
+        ["order", "message_received_at.desc.nullslast"],
+        ["order", "processed_at.desc"],
+        ["order", "id.asc"],
+        ["limit", limit],
+        ["offset", offset],
+      ])}`
+    ),
+    countProcessedEmails(userId, options.category ? [["category", `eq.${options.category}`]] : []),
+  ]);
+
+  return { rows, total: total ?? rows.length, offset, limit };
+}
+
 export async function getEmailHistory(
   userId: string
 ): Promise<ProcessedEmailRow[]> {
-  return await fluxJson<ProcessedEmailRow[]>(
-    `/processed_emails${postgrestParams([
-      [
-        "select",
-        "id,gmail_message_id,account_id,accounts(email),category,subject,sender,processed_at,message_received_at,actions_taken,was_archived,applied_label_names",
-      ],
-      userFilter(userId),
-      ["order", "message_received_at.desc.nullslast"],
-      ["order", "processed_at.desc"],
-      ["order", "id.asc"],
-      ["limit", 50],
-    ])}`
-  );
+  const page = await getEmailActivityPage(userId, {
+    offset: 0,
+    limit: EMAIL_ACTIVITY_PAGE_SIZE,
+  });
+  return page.rows;
 }
 
 export async function getLatestJob(userId: string): Promise<RunJobRow | null> {

@@ -103,7 +103,11 @@ export default async function OverviewPage({
             View all activity →
           </Link>
         </div>
-        <HistoryTable rows={history} />
+        <HistoryTable
+          rows={history}
+          categoryCounts={metrics.by_category}
+          totalCount={metrics.total_processed}
+        />
       </section>
     </>
   );
