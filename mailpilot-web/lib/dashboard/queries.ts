@@ -2,6 +2,7 @@ import type { RunJobRow } from "@/app/api/run/route";
 import {
   EMAIL_ACTIVITY_PAGE_SIZE,
   EMAIL_ACTIVITY_SELECT,
+  OVERVIEW_ACTIVITY_PREVIEW_LIMIT,
   type ProcessedEmailRow,
 } from "@/lib/emailActivity";
 import { CATEGORY_ORDER } from "@/lib/categories";
@@ -170,6 +171,16 @@ export async function getEmailHistory(
   const page = await getEmailActivityPage(userId, {
     offset: 0,
     limit: EMAIL_ACTIVITY_PAGE_SIZE,
+  });
+  return page.rows;
+}
+
+export async function getEmailHistoryPreview(
+  userId: string
+): Promise<ProcessedEmailRow[]> {
+  const page = await getEmailActivityPage(userId, {
+    offset: 0,
+    limit: OVERVIEW_ACTIVITY_PREVIEW_LIMIT,
   });
   return page.rows;
 }

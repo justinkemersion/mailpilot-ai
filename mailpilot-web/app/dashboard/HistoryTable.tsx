@@ -5,23 +5,21 @@ export type { ProcessedEmailRow };
 
 interface HistoryTableProps {
   rows: ProcessedEmailRow[];
-  categoryCounts?: Record<string, number>;
-  totalCount?: number | null;
+  labelledById?: string;
 }
 
-/** Compact activity table for overview — no server pagination. */
+/** Activity preview for Overview — no search, filters, or pagination. */
 export function HistoryTable({
   rows,
-  categoryCounts,
-  totalCount,
+  labelledById = "recent-activity-heading",
 }: HistoryTableProps) {
   return (
     <EmailActivityTable
       initialRows={rows}
       initialTotal={rows.length}
       paginate={false}
-      categoryCounts={categoryCounts}
-      totalCount={totalCount}
+      variant="preview"
+      labelledById={labelledById}
     />
   );
 }

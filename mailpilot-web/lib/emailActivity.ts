@@ -15,6 +15,9 @@ export interface ProcessedEmailRow {
 
 export const EMAIL_ACTIVITY_PAGE_SIZE = 50;
 
+/** Max rows shown on the Overview activity preview (not the full Activity page). */
+export const OVERVIEW_ACTIVITY_PREVIEW_LIMIT = 10;
+
 export const EMAIL_ACTIVITY_SELECT =
   "id,gmail_message_id,account_id,accounts(email),category,subject,sender,processed_at,message_received_at,actions_taken,was_archived,applied_label_names";
 

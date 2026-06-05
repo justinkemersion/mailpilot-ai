@@ -17,8 +17,8 @@ export function MetricCard({ label, value, caption, icon: Icon }: MetricCardProp
   return (
     <div
       className={cn(
-        "flex flex-col gap-1 rounded-xl border border-zinc-200 bg-white p-4",
-        "ring-1 ring-transparent dark:border-zinc-800 dark:bg-zinc-900"
+        "flex flex-col gap-1.5 rounded-xl border border-zinc-200/80 bg-white p-5 shadow-sm",
+        "dark:border-zinc-800/80 dark:bg-zinc-900 dark:shadow-none sm:p-6"
       )}
     >
       <div className="flex items-center justify-between gap-2">
@@ -27,7 +27,7 @@ export function MetricCard({ label, value, caption, icon: Icon }: MetricCardProp
           <Icon className="h-4 w-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
         ) : null}
       </div>
-      <p className="text-3xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+      <p className="text-3xl font-semibold tracking-tight tabular-nums text-zinc-900 sm:text-4xl dark:text-zinc-50">
         {formatValue(value)}
       </p>
       {caption ? (

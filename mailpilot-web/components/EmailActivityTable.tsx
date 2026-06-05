@@ -31,6 +31,8 @@ interface EmailActivityTableProps {
   initialTotal: number;
   pageSize?: number;
   paginate?: boolean;
+  variant?: "full" | "preview";
+  labelledById?: string;
   categoryCounts?: Record<string, number>;
   totalCount?: number | null;
 }
@@ -69,9 +71,12 @@ export function EmailActivityTable({
   initialTotal,
   pageSize = EMAIL_ACTIVITY_PAGE_SIZE,
   paginate = true,
+  variant = "full",
+  labelledById,
   categoryCounts = {},
   totalCount = null,
 }: EmailActivityTableProps) {
+  const isPreview = variant === "preview";
   const router = useRouter();
   const [rows, setRows] = useState<ProcessedEmailRow[]>(initialRows);
   const [total, setTotal] = useState(initialTotal);
@@ -90,12 +95,12 @@ export function EmailActivityTable({
   );
 
   useEffect(() => {
-    if (!paginate && categoryFilter === "") {
+    if (isPreview || (!paginate && categoryFilter === "")) {
       setRows(initialRows);
       setTotal(initialTotal);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sync server rows when not paginating
-  }, [rowsSyncKey, paginate, categoryFilter]);
+  }, [rowsSyncKey, paginate, categoryFilter, isPreview]);
 
   const filterOptions = useMemo((): FilterTabOption[] => {
     const allCount = totalCount ?? total;
@@ -222,7 +227,11 @@ export function EmailActivityTable({
     }
   }
 
-  if (rows.length === 0 && !loadingCategory && categoryFilter === "" && !searchQuery) {
+  if (
+    rows.length === 0 &&
+    !loadingCategory &&
+    (isPreview || (categoryFilter === "" && !searchQuery))
+  ) {
     return (
       <EmptyState
         icon={Inbox}
@@ -237,14 +246,16 @@ export function EmailActivityTable({
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {statusMessage ?? ""}
       </p>
-      <div className="space-y-3 border-b border-zinc-200 px-3 py-3 dark:border-zinc-800 sm:px-4">
-        <SearchInput value={searchQuery} onChange={setSearchQuery} />
-        <FilterTabs
-          options={filterOptions}
-          value={categoryFilter}
-          onChange={(v) => void handleCategoryChange(v)}
-        />
-      </div>
+      {!isPreview ? (
+        <div className="space-y-3 border-b border-zinc-200 px-3 py-3 dark:border-zinc-800 sm:px-4">
+          <SearchInput value={searchQuery} onChange={setSearchQuery} />
+          <FilterTabs
+            options={filterOptions}
+            value={categoryFilter}
+            onChange={(v) => void handleCategoryChange(v)}
+          />
+        </div>
+      ) : null}
 
       {fetchError ? (
         <p
@@ -277,70 +288,96 @@ export function EmailActivityTable({
           </div>
 
           <div className="hidden min-w-0 max-w-full overflow-x-auto lg:block">
-            <table className="w-full min-w-[44rem] text-sm">
-              <caption className="sr-only">Processed email activity</caption>
-              <thead>
-                <tr className="border-b border-zinc-200 dark:border-zinc-800">
-                  <th
-                    scope="col"
-                    className="px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
-                  >
-                    Received
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
-                  >
-                    Account
-                  </th>
-                  <th
-                    scope="col"
-                    className="min-w-[8rem] px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
-                  >
-                    Sender
-                  </th>
-                  <th
-                    scope="col"
-                    className="min-w-[10rem] px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
-                  >
-                    Subject
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
-                  >
-                    Category
-                  </th>
-                  <th
-                    scope="col"
-                    className="min-w-[8rem] px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
-                  >
-                    Actions
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
-                  >
-                    Undo
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {displayRows.map((row) => (
-                  <ActivityDesktopRow
-                    key={row.id}
-                    row={row}
-                    undoState={undoState[row.id] ?? "idle"}
-                    onUndo={handleUndo}
-                  />
-                ))}
-              </tbody>
-            </table>
+            {isPreview ? (
+              <table
+                className="w-full text-sm"
+                aria-labelledby={labelledById}
+              >
+                <thead className="sr-only">
+                  <tr>
+                    <th scope="col">Received</th>
+                    <th scope="col">Message</th>
+                    <th scope="col">Category</th>
+                    <th scope="col">Undo</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {displayRows.map((row) => (
+                    <ActivityPreviewDesktopRow
+                      key={row.id}
+                      row={row}
+                      undoState={undoState[row.id] ?? "idle"}
+                      onUndo={handleUndo}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full min-w-[44rem] text-sm">
+                <caption className="sr-only">Processed email activity</caption>
+                <thead>
+                  <tr className="border-b border-zinc-200 dark:border-zinc-800">
+                    <th
+                      scope="col"
+                      className="px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
+                    >
+                      Received
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
+                    >
+                      Account
+                    </th>
+                    <th
+                      scope="col"
+                      className="min-w-[8rem] px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
+                    >
+                      Sender
+                    </th>
+                    <th
+                      scope="col"
+                      className="min-w-[10rem] px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
+                    >
+                      Subject
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
+                    >
+                      Category
+                    </th>
+                    <th
+                      scope="col"
+                      className="min-w-[8rem] px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
+                    >
+                      Actions
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-3 py-3 text-left text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400 sm:px-4"
+                    >
+                      Undo
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {displayRows.map((row) => (
+                    <ActivityDesktopRow
+                      key={row.id}
+                      row={row}
+                      undoState={undoState[row.id] ?? "idle"}
+                      onUndo={handleUndo}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </>
       )}
 
-      {paginate && hasMore && !loadingCategory ? (
+      {!isPreview && paginate && hasMore && !loadingCategory ? (
         <div className="border-t border-zinc-200 px-4 py-4 dark:border-zinc-800">
           <button
             type="button"
@@ -447,6 +484,60 @@ function ActivityMobileRow({
         </div>
       </div>
     </article>
+  );
+}
+
+function ActivityPreviewDesktopRow({
+  row,
+  undoState,
+  onUndo,
+}: {
+  row: ProcessedEmailRow;
+  undoState: UndoButtonState;
+  onUndo: (row: ProcessedEmailRow) => void;
+}) {
+  const undone = isUndone(row.actions_taken);
+  const { displayName } = parseSender(row.sender);
+
+  return (
+    <tr
+      className={`transition-colors ${
+        undone ? "opacity-50" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+      }`}
+    >
+      <td
+        className="px-4 py-3 text-xs whitespace-nowrap text-zinc-500 dark:text-zinc-400"
+        title={
+          row.message_received_at
+            ? `Processed ${formatMailpilotDateUtc(row.processed_at)}`
+            : undefined
+        }
+      >
+        {formatMailpilotDateUtc(row.message_received_at ?? row.processed_at)}
+      </td>
+      <td className="min-w-0 px-4 py-3">
+        <div className="min-w-0">
+          <p
+            className="truncate font-medium text-zinc-900 dark:text-zinc-50"
+            title={row.subject ?? ""}
+          >
+            {row.subject ? truncateText(row.subject, 72) : "(no subject)"}
+          </p>
+          <p
+            className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400"
+            title={row.sender ?? ""}
+          >
+            {truncateText(displayName, 48)}
+          </p>
+        </div>
+      </td>
+      <td className="px-4 py-3 whitespace-nowrap">
+        <CategoryPill category={row.category} />
+      </td>
+      <td className="px-4 py-3 whitespace-nowrap">
+        <UndoActionButton row={row} state={undoState} onUndo={onUndo} />
+      </td>
+    </tr>
   );
 }
 

@@ -71,7 +71,7 @@ When `MAILPILOT_DEMO_MODE=true`:
 
 | Command | Purpose |
 |--------|---------|
-| `npm run dev` | Local dev |
+| `npm run dev` | Local dev (webpack; required for NextAuth `/api/auth/*` catch-all) |
 | `npm run build` / `npm start` | Production |
 | `npm run lint` | ESLint |
 

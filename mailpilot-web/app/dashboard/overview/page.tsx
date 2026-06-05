@@ -1,18 +1,19 @@
-import { AccountsEmptyState } from "@/components/AccountsEmptyState";
 import { ClassifierStatusCard } from "@/components/ClassifierStatusCard";
+import { OverviewAccountsSnapshot } from "@/components/OverviewAccountsSnapshot";
 import { OverviewMetricsGrid } from "@/components/OverviewMetricsGrid";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
   getConnectedAccounts,
   getDashboardMetrics,
-  getEmailHistory,
+  getEmailHistoryPreview,
   getLastSyncedByAccount,
   getLatestJob,
 } from "@/lib/dashboard/queries";
+import { OVERVIEW_ACTIVITY_PREVIEW_LIMIT } from "@/lib/emailActivity";
+import { focusRing } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ConnectGmailLink } from "../ConnectGmailLink";
-import { ConnectedAccountsList } from "../ConnectedAccountsList";
 import { HistoryTable } from "../HistoryTable";
 import { RunSyncControl } from "../RunSyncControl";
 
@@ -24,10 +25,10 @@ export default async function OverviewPage({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [accounts, history, latestJob, metrics, lastSyncedByAccount] =
+  const [accounts, historyPreview, latestJob, metrics, lastSyncedByAccount] =
     await Promise.all([
       getConnectedAccounts(user.id),
-      getEmailHistory(user.id),
+      getEmailHistoryPreview(user.id),
       getLatestJob(user.id),
       getDashboardMetrics(user.id),
       getLastSyncedByAccount(user.id),
@@ -36,9 +37,10 @@ export default async function OverviewPage({
   const params = await searchParams;
   const justConnected = params.connected === "true";
   const connectError = params.error;
+  const previewCount = historyPreview.length;
 
   return (
-    <>
+    <div className="space-y-10">
       {justConnected && (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400">
           Gmail account connected successfully.
@@ -50,6 +52,15 @@ export default async function OverviewPage({
         </div>
       )}
 
+      <header className="space-y-1">
+        <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+          Your inbox at a glance
+        </h2>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          Real-time metrics and recent mail processing across connected Gmail accounts.
+        </p>
+      </header>
+
       <OverviewMetricsGrid metrics={metrics} />
 
       <section className="grid gap-4 lg:grid-cols-2">
@@ -57,52 +68,38 @@ export default async function OverviewPage({
         <RunSyncControl initialJob={latestJob} variant="section" />
       </section>
 
-      <section>
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              Connected Gmail accounts
-            </h2>
-            <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-              MailPilot processes mail in the background for each connected account.
-            </p>
-          </div>
-          <ConnectGmailLink />
-        </div>
-
-        {accounts.length === 0 ? (
-          <AccountsEmptyState />
-        ) : (
-          <ConnectedAccountsList
-            accounts={accounts}
-            lastSyncedByAccount={lastSyncedByAccount}
-          />
-        )}
-      </section>
+      <OverviewAccountsSnapshot
+        accounts={accounts}
+        lastSyncedByAccount={lastSyncedByAccount}
+      />
 
       <section>
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+            <h2
+              id="recent-activity-heading"
+              className="text-base font-semibold text-zinc-900 dark:text-zinc-50"
+            >
               Recent activity
             </h2>
             <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-              Last 50 emails processed across all connected accounts.
+              {previewCount > 0
+                ? `Showing ${previewCount.toLocaleString()} most recent processed email${previewCount === 1 ? "" : "s"}.`
+                : `Up to ${OVERVIEW_ACTIVITY_PREVIEW_LIMIT} most recent processed emails will appear here after your first sync.`}
             </p>
           </div>
           <Link
             href="/dashboard/activity"
-            className="text-sm font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300"
+            className={cn(
+              "inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50 px-4 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-300 dark:hover:bg-indigo-950",
+              focusRing
+            )}
           >
-            View all activity →
+            View all activity
           </Link>
         </div>
-        <HistoryTable
-          rows={history}
-          categoryCounts={metrics.by_category}
-          totalCount={metrics.total_processed}
-        />
+        <HistoryTable rows={historyPreview} />
       </section>
-    </>
+    </div>
   );
 }

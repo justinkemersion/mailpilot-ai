@@ -7,6 +7,8 @@ import type {
 import { RunResultBanner } from "@/components/RunResultBanner";
 import { RunSyncButton, type RunSyncOptions } from "@/components/RunSyncButton";
 import { classifierLabel } from "@/lib/formatClassifier";
+import { focusRing } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { Cpu, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -103,7 +105,7 @@ function StatusIndicator({ status }: { status: JobStatus }) {
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-75" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-yellow-500" />
         </span>
-        <span>Waiting for runner</span>
+        <span>Waiting to start…</span>
       </div>
     );
   }
@@ -112,7 +114,7 @@ function StatusIndicator({ status }: { status: JobStatus }) {
     return (
       <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400">
         <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
-        <span>Syncing…</span>
+        <span>Syncing your mail…</span>
       </div>
     );
   }
@@ -144,9 +146,6 @@ function ActivityLog({ entries }: { entries: RunJobProgress[] }) {
 
   return (
     <div className="min-h-0 w-full min-w-0">
-      <p className="mb-1.5 text-[10px] font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-        Activity
-      </p>
       <div
         ref={scrollerRef}
         className="max-h-44 min-h-[5.5rem] overflow-x-hidden overflow-y-auto scroll-smooth rounded-md border border-zinc-200 bg-zinc-50/90 px-2.5 py-2 overscroll-y-contain dark:border-zinc-700 dark:bg-zinc-950/50"
@@ -177,6 +176,52 @@ function ActivityLog({ entries }: { entries: RunJobProgress[] }) {
         </ul>
       </div>
     </div>
+  );
+}
+
+function RunDetailsDisclosure({
+  classifierLabelActive,
+  classifierLabelLastRun,
+  isActive,
+  activityLog,
+  timedOut,
+}: {
+  classifierLabelActive: string | null;
+  classifierLabelLastRun: string | null;
+  isActive: boolean;
+  activityLog: RunJobProgress[];
+  timedOut: boolean;
+}) {
+  const hasClassifier = Boolean(classifierLabelActive || classifierLabelLastRun);
+  const hasLog = activityLog.length > 0;
+  const show = isActive || hasLog || hasClassifier || timedOut;
+
+  if (!show) return null;
+
+  return (
+    <details className="min-w-0">
+      <summary
+        className={cn(
+          "cursor-pointer text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200",
+          focusRing
+        )}
+      >
+        View run details
+      </summary>
+      <div className="mt-2 flex flex-col gap-3">
+        {classifierLabelActive ? (
+          <ClassifierSourceBadge label={classifierLabelActive} pending={isActive} />
+        ) : classifierLabelLastRun ? (
+          <ClassifierSourceBadge label={classifierLabelLastRun} lastRun />
+        ) : null}
+        {timedOut ? (
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            If sync stays pending, check that MailPilot is running on your server.
+          </p>
+        ) : null}
+        {hasLog ? <ActivityLog entries={activityLog} /> : null}
+      </div>
+    </details>
   );
 }
 
@@ -320,6 +365,11 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
   const classifierLabelLastRun =
     !isActive && !classifierLabelActive ? classifierLabelFromJob(job) : null;
 
+  const progressMessage =
+    isActive && job?.progress?.message
+      ? job.progress.message.replace(/^AI classifier:\s*/i, "").trim()
+      : null;
+
   const isSection = variant === "section";
   const rootClass = isSection
     ? "flex w-full min-w-0 flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-none"
@@ -333,14 +383,10 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
           aria-hidden={!isSection}
         >
           <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
-            Manual sync
+            Sync your inboxes
           </p>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Queue a one-time run for the worker (
-            <code className="rounded bg-zinc-100 px-1 text-[10px] dark:bg-zinc-800">
-              watch-jobs
-            </code>
-            ). Classifier is configured on the server and reported per run.
+            Process recent mail from connected Gmail accounts.
           </p>
         </div>
         <RunSyncButton
@@ -353,33 +399,26 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
       </div>
 
       <div
-        className={`flex min-w-0 flex-col gap-3${isSection ? " border-t border-zinc-100 pt-3 dark:border-zinc-800" : ""}`}
+        className={`flex min-w-0 flex-col gap-2${isSection ? " border-t border-zinc-100 pt-3 dark:border-zinc-800" : ""}`}
         aria-live="polite"
         aria-relevant="additions text"
       >
-        {classifierLabelActive ? (
-          <ClassifierSourceBadge label={classifierLabelActive} pending={isActive} />
-        ) : classifierLabelLastRun ? (
-          <ClassifierSourceBadge label={classifierLabelLastRun} lastRun />
-        ) : isSection ? (
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            AI classifier (Cloudflare or OpenAI) is chosen on the worker — run a sync to
-            see which model was used.
+        <StatusIndicator status={currentStatus} />
+        {progressMessage ? (
+          <p className="text-xs text-zinc-600 dark:text-zinc-400">{progressMessage}</p>
+        ) : null}
+        {timedOut ? (
+          <p className="text-xs text-yellow-700 dark:text-yellow-400">
+            This is taking longer than usual.
           </p>
         ) : null}
-        <StatusIndicator status={currentStatus} />
-        {timedOut && (
-          <p className="text-xs text-yellow-700 dark:text-yellow-400">
-            Still pending after 5 min — ensure the runner is active (
-            <code className="rounded bg-yellow-100 px-1 text-[10px] dark:bg-yellow-950">
-              watch-jobs
-            </code>
-            ).
-          </p>
-        )}
-        {(isActive || activityLog.length > 0) && (
-          <ActivityLog entries={activityLog} />
-        )}
+        <RunDetailsDisclosure
+          classifierLabelActive={classifierLabelActive}
+          classifierLabelLastRun={classifierLabelLastRun}
+          isActive={isActive}
+          activityLog={activityLog}
+          timedOut={timedOut}
+        />
         {showResult && job ? (
           <RunResultBanner
             job={job}

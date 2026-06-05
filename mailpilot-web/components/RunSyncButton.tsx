@@ -47,7 +47,7 @@ export function RunSyncButton({
         disabled={submitting || isActive}
         className={cn(
           className ??
-            "inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[9rem] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700",
+            "inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[9rem] dark:bg-indigo-500 dark:hover:bg-indigo-400",
           focusRing
         )}
       >
@@ -65,11 +65,7 @@ export function RunSyncButton({
               Run sync
             </h2>
             <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-              Queue a run for the worker. Requires{" "}
-              <code className="rounded bg-zinc-100 px-1 text-[10px] dark:bg-zinc-800">
-                watch-jobs
-              </code>
-              .
+              Choose how far back to scan and whether to apply changes.
             </p>
           </div>
           <button
