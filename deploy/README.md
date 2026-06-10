@@ -11,18 +11,29 @@ Production layout on a single host:
 
 The runner does not need the Docker `flux-network`; it talks to Flux and Gmail over HTTPS.
 
-## Web demo mode (showcase only)
+## Web demo mode
 
-The dashboard supports an optional **demo posture** for public showcases. Controlled by **server-only** env:
+The dashboard supports a **cookie-based visitor demo** (fake user Chris, `/demo/enter`) plus an optional **operator mode** for screenshots.
+
+**Production visitor demo** (recommended for public showcases):
 
 ```bash
-MAILPILOT_DEMO_MODE=true          # fixture data; blocks mutations — never in production
-NEXT_PUBLIC_DEMO_BANNER=true      # optional dismissible banner (UI only)
+ENABLE_DEMO_MODE=true              # server authority for /demo/enter
+NEXT_PUBLIC_ENABLE_DEMO_MODE=true  # login CTA visibility only
 ```
 
-**Production:** `MAILPILOT_DEMO_MODE` must be **absent or `false`** in `.env.docker` and any host env. Demo mode must not be enabled on the live personal instance unless you intend a read-only public demo.
+Set these in **`.env.docker`** on the host, then rebuild the web container.
 
-Details: [`mailpilot-web/README.md`](../mailpilot-web/README.md#demo--showcase-mode).
+**Operator / screenshot mode** (forces fixtures for all requests — not the visitor demo path):
+
+```bash
+MAILPILOT_DEMO_MODE=true
+NEXT_PUBLIC_DEMO_BANNER=true
+```
+
+**Personal production instance:** leave `MAILPILOT_DEMO_MODE` unset unless you intentionally want global fixture mode.
+
+Template: [`deploy/env/docker.env.example`](env/docker.env.example). Details: [`mailpilot-web/README.md`](../mailpilot-web/README.md#demo-mode).
 
 ## systemd runner (recommended)
 
