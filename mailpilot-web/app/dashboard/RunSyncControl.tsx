@@ -228,9 +228,14 @@ function RunDetailsDisclosure({
 interface Props {
   initialJob: RunJobRow | null;
   variant?: "default" | "section";
+  isDemo?: boolean;
 }
 
-export function RunSyncControl({ initialJob, variant = "default" }: Props) {
+export function RunSyncControl({
+  initialJob,
+  variant = "default",
+  isDemo = false,
+}: Props) {
   const router = useRouter();
   const [job, setJob] = useState<RunJobRow | null>(initialJob);
   const [options, setOptions] = useState<RunSyncOptions>(DEFAULT_OPTIONS);
@@ -345,6 +350,9 @@ export function RunSyncControl({ initialJob, variant = "default" }: Props) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const newJob = (await res.json()) as RunJobRow;
       setJob(newJob);
+      if (isDemo && newJob.status === "done") {
+        router.refresh();
+      }
     } catch (err) {
       console.error("Failed to queue run:", err);
     } finally {

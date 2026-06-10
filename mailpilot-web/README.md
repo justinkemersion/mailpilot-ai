@@ -49,23 +49,57 @@ See [root `README.md`](../README.md) and [`ARCHETECTURE.md`](./ARCHETECTURE.md).
 
    Use **Run sync** on the overview page to queue `run_jobs`.
 
-## Demo / showcase mode
+## Demo mode
 
-For a public Flux showcase without real mailbox data:
+Visitors can explore MailPilot without OAuth or Gmail using a **cookie-scoped demo session** (fake user **Chris**, `demo@mailpilot.local`).
+
+### Entry
+
+- Login page: **Continue as Demo User**
+- Direct URL: `/demo/enter` (alias: `/demo`)
+
+### Environment
 
 ```bash
-# .env.local or container env (server-only — never NEXT_PUBLIC_)
-MAILPILOT_DEMO_MODE=true
-NEXT_PUBLIC_DEMO_BANNER=true
+# Server authority — required in production to enable /demo/enter
+ENABLE_DEMO_MODE=true
+
+# UI hint only — shows login CTA; does NOT authorize demo entry
+NEXT_PUBLIC_ENABLE_DEMO_MODE=true
 ```
 
-When `MAILPILOT_DEMO_MODE=true`:
+**Defaults:** demo entry is **on** in `NODE_ENV=development` unless `ENABLE_DEMO_MODE=false`. In production, demo entry is **off** unless `ENABLE_DEMO_MODE=true`.
 
-- Server reads return fixture data from [`lib/demo.ts`](./lib/demo.ts) (no Flux calls for dashboard queries).
-- Mutations (`/api/run`, `/api/undo`, `/api/accounts/*`) return HTTP 403.
-- `/auth/google` redirects to `/dashboard/overview?demo=true` instead of starting OAuth.
+### Safety guarantees
 
-**Production deployments must leave `MAILPILOT_DEMO_MODE` unset or `false`.** See [`deploy/README.md`](../deploy/README.md).
+Demo mode never:
+
+- Starts Gmail OAuth or reads tokens
+- Calls AI providers or enqueues real sync jobs
+- Writes to Flux / production user data
+- Exposes secrets, env vars, or provider diagnostics
+
+Simulated UX: `/api/run` returns a fake successful sync; `/api/undo` returns a friendly simulated response. Account mutations and OAuth exchange remain blocked.
+
+Sign out clears the demo cookie (`mailpilot_demo=1`).
+
+### Operator / screenshot mode (legacy)
+
+`MAILPILOT_DEMO_MODE=true` forces fixture data for **all** requests (including authenticated users). Use only for operator screenshots — **not** the production visitor demo path.
+
+Fixtures live in [`lib/demo/fixtures.ts`](./lib/demo/fixtures.ts).
+
+### Manual QA checklist
+
+- [ ] `/login` shows **Continue as Demo User** when demo UI is enabled
+- [ ] `/demo/enter` sets cookie and lands on `/dashboard/overview` as Chris
+- [ ] Overview, Activity, Accounts, Settings load with sample data
+- [ ] Demo banner and **Demo** badge visible; overview card explains sample inbox
+- [ ] Run sync shows simulated success; undo shows “Demo action simulated”
+- [ ] Connect Gmail shows demo copy + link to sign in (no OAuth)
+- [ ] Sign out returns to login and clears demo state
+- [ ] Real GitHub/Google login still works; demo cookie cleared after OAuth
+- [ ] Mobile layout usable at 375px width
 
 ## Scripts
 
@@ -74,6 +108,8 @@ When `MAILPILOT_DEMO_MODE=true`:
 | `npm run dev` | Local dev (webpack; required for NextAuth `/api/auth/*` catch-all) |
 | `npm run build` / `npm start` | Production |
 | `npm run lint` | ESLint |
+| `npm run typecheck` | TypeScript |
+| `npm test` | Vitest (demo mode unit tests) |
 
 ## Screenshots
 
@@ -90,7 +126,7 @@ Capture curated dashboard images into [`public/screenshots/`](./public/screensho
 ### Verification (before deploy)
 
 ```bash
-npx tsc --noEmit && npm run lint && npm run build
+npx tsc --noEmit && npm run lint && npm test && npm run build
 ```
 
 Smoke-test Gmail connect, manual sync, undo, pagination, sign out, and 375px mobile layout per the UI plan §8 matrix.

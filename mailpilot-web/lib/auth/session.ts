@@ -1,4 +1,5 @@
 import { authOptions } from "@/lib/auth/options";
+import { getDemoSessionUser } from "@/lib/demo";
 import { getServerSession } from "next-auth";
 
 export interface MailpilotUser {
@@ -10,11 +11,13 @@ export interface MailpilotUser {
 export async function getCurrentUser(): Promise<MailpilotUser | null> {
   const session = await getServerSession(authOptions);
   const userId = session?.user?.id;
-  if (!userId) return null;
+  if (userId) {
+    return {
+      id: userId,
+      email: session.user?.email ?? null,
+      name: session.user?.name ?? null,
+    };
+  }
 
-  return {
-    id: userId,
-    email: session.user?.email ?? null,
-    name: session.user?.name ?? null,
-  };
+  return getDemoSessionUser();
 }

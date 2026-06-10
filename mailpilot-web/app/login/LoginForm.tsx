@@ -2,16 +2,19 @@ import { AlertBanner } from "@/components/ui/AlertBanner";
 import { BrandMark } from "@/components/BrandMark";
 import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
-import { LogIn, Mail } from "lucide-react";
+import { LogIn, Mail, Sparkles } from "lucide-react";
+import Link from "next/link";
 
-const CALLBACK_URL = "/dashboard";
+const CALLBACK_URL = "/auth/complete";
 
 export function LoginForm({
   csrfToken,
   error,
+  showDemoEntry = false,
 }: {
   csrfToken: string | null;
   error?: string | null;
+  showDemoEntry?: boolean;
 }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-base px-4">
@@ -70,6 +73,29 @@ export function LoginForm({
                   Sign in with Google
                 </button>
               </form>
+
+              {showDemoEntry ? (
+                <>
+                  <div className="relative py-1">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-border-subtle" />
+                    </div>
+                    <p className="relative mx-auto w-fit bg-surface-1 px-2 text-xs text-text-muted">
+                      or
+                    </p>
+                  </div>
+                  <Link
+                    href="/demo/enter"
+                    className={cn(
+                      "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-800 transition-colors hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-200 dark:hover:bg-indigo-950",
+                      focusRing
+                    )}
+                  >
+                    <Sparkles className="h-4 w-4" aria-hidden />
+                    Continue as Demo User
+                  </Link>
+                </>
+              ) : null}
             </>
           )}
         </div>

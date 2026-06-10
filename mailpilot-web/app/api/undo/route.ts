@@ -1,5 +1,5 @@
 import { getCurrentUser } from "@/lib/auth/session";
-import { blockIfDemoMode } from "@/lib/demo/guard";
+import { blockIfDemoMode, isDemoRequest } from "@/lib/demo";
 import { fluxJson, postgrestParams } from "@/lib/flux/client";
 import { OAuth2Client } from "google-auth-library";
 import { google } from "googleapis";
@@ -80,13 +80,21 @@ async function resolveRemoveLabelIds(
  * reverts Gmail changes via googleapis messages.modify, then marks the row [UNDONE].
  */
 export async function POST(request: Request) {
-  const blocked = blockIfDemoMode();
-  if (blocked) return blocked;
-
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
+
+  if (await isDemoRequest()) {
+    return NextResponse.json({
+      ok: true,
+      demo: true,
+      message: "Demo action simulated",
+    });
+  }
+
+  const blocked = await blockIfDemoMode();
+  if (blocked) return blocked;
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;

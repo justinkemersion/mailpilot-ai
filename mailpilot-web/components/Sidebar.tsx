@@ -18,6 +18,7 @@ export const DASHBOARD_NAV = [
 
 interface SidebarProps {
   userLabel: string;
+  isDemoUser?: boolean;
   mobileOpen: boolean;
   onMobileClose: () => void;
 }
@@ -51,15 +52,32 @@ function SidebarBrand({
   );
 }
 
-function SidebarUserFooter({ userLabel }: { userLabel: string }) {
+function DemoBadge() {
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-full bg-indigo-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-300">
+      Demo
+    </span>
+  );
+}
+
+function SidebarUserFooter({
+  userLabel,
+  isDemoUser,
+}: {
+  userLabel: string;
+  isDemoUser: boolean;
+}) {
   return (
     <div className="mt-auto border-t border-zinc-800 p-3">
-      <p
-        className="truncate text-xs text-zinc-500"
-        title={userLabel}
-      >
-        {userLabel}
-      </p>
+      <div className="flex min-w-0 items-center gap-2">
+        <p
+          className="min-w-0 truncate text-xs text-zinc-500"
+          title={userLabel}
+        >
+          {userLabel}
+        </p>
+        {isDemoUser ? <DemoBadge /> : null}
+      </div>
       <SignOutButton variant="sidebar" />
     </div>
   );
@@ -67,6 +85,7 @@ function SidebarUserFooter({ userLabel }: { userLabel: string }) {
 
 export function Sidebar({
   userLabel,
+  isDemoUser = false,
   mobileOpen,
   onMobileClose,
 }: SidebarProps) {
@@ -135,7 +154,7 @@ export function Sidebar({
           <SidebarBrand showTagline />
         </div>
         {nav}
-        <SidebarUserFooter userLabel={userLabel} />
+        <SidebarUserFooter userLabel={userLabel} isDemoUser={isDemoUser} />
       </aside>
 
       {mobileOpen ? (
@@ -168,7 +187,7 @@ export function Sidebar({
               </button>
             </div>
             {nav}
-            <SidebarUserFooter userLabel={userLabel} />
+            <SidebarUserFooter userLabel={userLabel} isDemoUser={isDemoUser} />
           </aside>
         </div>
       ) : null}

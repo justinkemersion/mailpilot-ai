@@ -1,6 +1,9 @@
 import { getCurrentUser } from "@/lib/auth/session";
-import { blockIfDemoMode } from "@/lib/demo/guard";
-import { getDemoLatestJob, isDemoMode } from "@/lib/demo";
+import {
+  createSimulatedDemoSyncJob,
+  getDemoLatestJob,
+  isDemoRequest,
+} from "@/lib/demo";
 import { fluxFetch, fluxJson, postgrestParams } from "@/lib/flux/client";
 import type { ClassifierInfo } from "@/lib/formatClassifier";
 import { NextResponse } from "next/server";
@@ -33,6 +36,7 @@ export interface RunJobRow {
     skipped_by_ai_limit?: number;
     ai_limit_hit?: boolean;
     ai_limit_message?: string | null;
+    demo_message?: string;
   } & ClassifierInfo) | null;
   error: string | null;
   progress: RunJobProgress | null;
@@ -68,12 +72,13 @@ function isUniqueViolation(status: number, detail: string): boolean {
  * Creates a pending run_job for the authenticated user.
  */
 export async function POST(request: Request) {
-  const blocked = blockIfDemoMode();
-  if (blocked) return blocked;
-
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  if (await isDemoRequest()) {
+    return NextResponse.json(createSimulatedDemoSyncJob(), { status: 201 });
   }
 
   const options: Record<string, unknown> = {};
@@ -136,7 +141,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  if (isDemoMode()) {
+  if (await isDemoRequest()) {
     return NextResponse.json(getDemoLatestJob());
   }
 

@@ -209,8 +209,13 @@ export function EmailActivityTable({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
+      const body = (await res.json()) as { demo?: boolean; message?: string };
       setUndoState((s) => ({ ...s, [row.id]: "done" }));
-      setStatusMessage(`Gmail changes undone for “${row.subject ?? "message"}”.`);
+      setStatusMessage(
+        body.demo
+          ? (body.message ?? "Demo action simulated.")
+          : `Gmail changes undone for “${row.subject ?? "message"}”.`
+      );
       setRows((prev) =>
         prev.map((r) =>
           r.id === row.id
@@ -455,6 +460,11 @@ function ActivityMobileRow({
               (no subject)
             </p>
           )}
+          {row.classification_note ? (
+            <p className="mt-1 line-clamp-2 text-xs text-indigo-700/90 dark:text-indigo-300/90">
+              {row.classification_note}
+            </p>
+          ) : null}
           {address && address !== displayName ? (
             <p
               className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400"
@@ -528,6 +538,11 @@ function ActivityPreviewDesktopRow({
           >
             {truncateText(displayName, 48)}
           </p>
+          {row.classification_note ? (
+            <p className="mt-1 line-clamp-2 text-xs text-indigo-700/90 dark:text-indigo-300/90">
+              {row.classification_note}
+            </p>
+          ) : null}
         </div>
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
@@ -620,6 +635,11 @@ function ActivityDesktopRow({
           >
             {truncateText(senderLine, 56)}
           </p>
+          {row.classification_note ? (
+            <p className="mt-1 line-clamp-2 text-xs text-indigo-700/90 dark:text-indigo-300/90">
+              {row.classification_note}
+            </p>
+          ) : null}
         </div>
       </td>
       <td className="px-3 py-2.5 whitespace-nowrap sm:px-4">

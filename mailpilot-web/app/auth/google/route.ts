@@ -1,4 +1,4 @@
-import { isDemoMode } from "@/lib/demo";
+import { clearDemoSessionCookie, isDemoRequest } from "@/lib/demo";
 import { NextResponse } from "next/server";
 
 const SCOPES = [
@@ -12,9 +12,6 @@ const SCOPES = [
  * Initiates the Google OAuth flow.
  * Redirects the user to Google's consent screen requesting gmail.modify scope
  * and offline access (so we receive a refresh_token we can hand to the Python runner).
- *
- * Middleware guarantees the user is already signed into Supabase before
- * they can reach this route.
  */
 export async function GET() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -27,8 +24,8 @@ export async function GET() {
     );
   }
 
-  if (isDemoMode()) {
-    return NextResponse.redirect(`${appUrl}/dashboard/overview?demo=true`);
+  if (await isDemoRequest()) {
+    return NextResponse.redirect(`${appUrl}/dashboard/accounts`);
   }
 
   if (!clientId) {
@@ -45,11 +42,12 @@ export async function GET() {
     redirect_uri: redirectUri,
     response_type: "code",
     scope: SCOPES,
-    access_type: "offline",   // ensures Google returns a refresh_token
-    prompt: "consent",        // forces re-consent so refresh_token is always returned
+    access_type: "offline",
+    prompt: "consent",
   });
 
   const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
-
-  return NextResponse.redirect(googleAuthUrl);
+  const response = NextResponse.redirect(googleAuthUrl);
+  clearDemoSessionCookie(response);
+  return response;
 }

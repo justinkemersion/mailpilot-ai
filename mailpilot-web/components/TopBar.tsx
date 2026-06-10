@@ -10,10 +10,11 @@ import { usePathname } from "next/navigation";
 
 interface TopBarProps {
   title: string;
+  isDemoUser?: boolean;
   onMenuOpen: () => void;
 }
 
-export function TopBar({ title, onMenuOpen }: TopBarProps) {
+export function TopBar({ title, isDemoUser = false, onMenuOpen }: TopBarProps) {
   const pathname = usePathname();
   const onOverview =
     pathname === "/dashboard/overview" ||
@@ -42,9 +43,16 @@ export function TopBar({ title, onMenuOpen }: TopBarProps) {
           <BrandMark size="sm" className="lg:hidden" />
           <div className="min-w-0">
             <p className="hidden text-xs text-text-muted lg:block">Dashboard</p>
-            <h1 className="truncate text-base font-semibold text-text-primary">
-              {title}
-            </h1>
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="truncate text-base font-semibold text-text-primary">
+                {title}
+              </h1>
+              {isDemoUser ? (
+                <span className="hidden shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700 sm:inline dark:bg-indigo-950 dark:text-indigo-300">
+                  Demo
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">

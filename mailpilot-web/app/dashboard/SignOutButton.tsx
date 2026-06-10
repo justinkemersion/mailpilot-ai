@@ -9,6 +9,14 @@ interface SignOutButtonProps {
   className?: string;
 }
 
+async function clearDemoSession(): Promise<void> {
+  try {
+    await fetch("/api/demo/exit", { method: "POST" });
+  } catch {
+    // Best-effort — cookie may already be cleared.
+  }
+}
+
 export function SignOutButton({
   variant = "header",
   className,
@@ -16,7 +24,12 @@ export function SignOutButton({
   return (
     <button
       type="button"
-      onClick={() => void signOut({ callbackUrl: "/login" })}
+      onClick={() => {
+        void (async () => {
+          await clearDemoSession();
+          await signOut({ callbackUrl: "/login" });
+        })();
+      }}
       className={cn(
         "text-sm transition-colors",
         focusRing,

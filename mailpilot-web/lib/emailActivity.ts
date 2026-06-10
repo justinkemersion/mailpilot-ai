@@ -11,6 +11,8 @@ export interface ProcessedEmailRow {
   actions_taken: string | null;
   was_archived: boolean;
   applied_label_names: string | null;
+  /** Demo fixtures only — classification rationale for UI preview */
+  classification_note?: string | null;
 }
 
 export const EMAIL_ACTIVITY_PAGE_SIZE = 50;

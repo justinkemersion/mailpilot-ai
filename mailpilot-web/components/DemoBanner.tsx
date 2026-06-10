@@ -3,21 +3,16 @@
 import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { Info, X } from "lucide-react";
-import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 interface DemoBannerProps {
-  /** Set from server via isDemoBannerEnabled() — banner UI only, not data routing. */
-  showEnvBanner: boolean;
+  showBanner: boolean;
 }
 
-export function DemoBanner({ showEnvBanner }: DemoBannerProps) {
-  const searchParams = useSearchParams();
-  const fromQuery = searchParams.get("demo") === "true";
+export function DemoBanner({ showBanner }: DemoBannerProps) {
   const [dismissed, setDismissed] = useState(false);
 
-  const show = !dismissed && (showEnvBanner || fromQuery);
-  if (!show) return null;
+  if (!showBanner || dismissed) return null;
 
   return (
     <div
@@ -30,9 +25,10 @@ export function DemoBanner({ showEnvBanner }: DemoBannerProps) {
           aria-hidden
         />
         <p className="min-w-0 flex-1 text-sm text-indigo-900 dark:text-indigo-100">
-          <span className="font-medium">Demo mode</span> — sample data only. Gmail
-          connect, sync, and undo are disabled. Sign in and connect your own accounts
-          to use MailPilot with real mail.
+          <span className="font-medium">Demo account · Sample Gmail data</span>
+          {" — "}
+          Gmail connect, real sync, and undo are disabled. Sign in with your
+          own account to use MailPilot with real mail.
         </p>
         <button
           type="button"

@@ -1,5 +1,7 @@
 import { AlertBanner } from "@/components/ui/AlertBanner";
 import { ClassifierStatusCard } from "@/components/ClassifierStatusCard";
+import { DemoOverviewCard } from "@/components/DemoOverviewCard";
+import { DemoSyncHistory } from "@/components/DemoSyncHistory";
 import { OverviewAccountsSnapshot } from "@/components/OverviewAccountsSnapshot";
 import { OverviewMetricsGrid } from "@/components/OverviewMetricsGrid";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -9,7 +11,9 @@ import {
   getEmailHistoryPreview,
   getLastSyncedByAccount,
   getLatestJob,
+  getSyncRunHistory,
 } from "@/lib/dashboard/queries";
+import { isDemoUser } from "@/lib/demo";
 import { OVERVIEW_ACTIVITY_PREVIEW_LIMIT } from "@/lib/emailActivity";
 import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
@@ -26,13 +30,16 @@ export default async function OverviewPage({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [accounts, historyPreview, latestJob, metrics, lastSyncedByAccount] =
+  const demo = isDemoUser(user);
+
+  const [accounts, historyPreview, latestJob, metrics, lastSyncedByAccount, syncHistory] =
     await Promise.all([
       getConnectedAccounts(user.id),
       getEmailHistoryPreview(user.id),
       getLatestJob(user.id),
       getDashboardMetrics(user.id),
       getLastSyncedByAccount(user.id),
+      demo ? getSyncRunHistory(user.id) : Promise.resolve([]),
     ]);
 
   const params = await searchParams;
@@ -42,12 +49,14 @@ export default async function OverviewPage({
 
   return (
     <div className="space-y-8 sm:space-y-10">
-      {justConnected ? (
+      {demo ? <DemoOverviewCard /> : null}
+
+      {justConnected && !demo ? (
         <AlertBanner variant="success">
           Gmail account connected successfully.
         </AlertBanner>
       ) : null}
-      {connectError ? (
+      {connectError && !demo ? (
         <AlertBanner variant="error">
           Something went wrong connecting Gmail ({connectError}). Please try again.
         </AlertBanner>
@@ -58,7 +67,9 @@ export default async function OverviewPage({
           Your inbox at a glance
         </h2>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Real-time metrics and recent mail processing across connected Gmail accounts.
+          {demo
+            ? "Sample metrics and recent mail processing from Chris's demo inbox."
+            : "Real-time metrics and recent mail processing across connected Gmail accounts."}
         </p>
       </header>
 
@@ -66,8 +77,10 @@ export default async function OverviewPage({
 
       <section className="grid gap-3 sm:gap-4 lg:grid-cols-2">
         <ClassifierStatusCard job={latestJob} />
-        <RunSyncControl initialJob={latestJob} variant="section" />
+        <RunSyncControl initialJob={latestJob} variant="section" isDemo={demo} />
       </section>
+
+      {demo ? <DemoSyncHistory runs={syncHistory} /> : null}
 
       <OverviewAccountsSnapshot
         accounts={accounts}

@@ -3,14 +3,18 @@ import {
   getConnectedAccounts,
   getLastSyncedByAccount,
 } from "@/lib/dashboard/queries";
+import { isDemoUser } from "@/lib/demo";
 import { redirect } from "next/navigation";
 import { AccountsEmptyState } from "@/components/AccountsEmptyState";
+import { DemoConnectNotice } from "@/components/DemoOverviewCard";
 import { ConnectGmailLink } from "../ConnectGmailLink";
 import { ConnectedAccountsList } from "../ConnectedAccountsList";
 
 export default async function AccountsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+
+  const demo = isDemoUser(user);
 
   const [accounts, lastSyncedByAccount] = await Promise.all([
     getConnectedAccounts(user.id),
@@ -25,11 +29,15 @@ export default async function AccountsPage() {
             Connected Gmail accounts
           </h2>
           <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-            MailPilot processes mail in the background for each connected account.
+            {demo
+              ? "Sample connected accounts shown for demo purposes."
+              : "MailPilot processes mail in the background for each connected account."}
           </p>
         </div>
-        <ConnectGmailLink />
+        {demo ? null : <ConnectGmailLink />}
       </div>
+
+      {demo ? <DemoConnectNotice className="mb-4" /> : null}
 
       {accounts.length === 0 ? (
         <AccountsEmptyState />

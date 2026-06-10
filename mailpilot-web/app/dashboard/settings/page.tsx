@@ -1,11 +1,15 @@
+import { DemoPreferencesPanel } from "@/components/DemoPreferencesPanel";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { getCurrentUser } from "@/lib/auth/session";
+import { DEMO_PREFERENCES, isDemoUser } from "@/lib/demo";
 import { Settings } from "lucide-react";
 import { redirect } from "next/navigation";
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+
+  const demo = isDemoUser(user);
 
   return (
     <section>
@@ -14,15 +18,21 @@ export default async function SettingsPage() {
           Settings
         </h2>
         <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-          Account and automation preferences will appear here.
+          {demo
+            ? "Preview preference memory with sample overrides."
+            : "Account and automation preferences will appear here."}
         </p>
       </div>
-      <EmptyState
-        variant="inline"
-        icon={Settings}
-        title="Settings coming soon"
-        description="Classifier configuration and runner preferences will be surfaced here when available."
-      />
+      {demo ? (
+        <DemoPreferencesPanel preferences={DEMO_PREFERENCES} />
+      ) : (
+        <EmptyState
+          variant="inline"
+          icon={Settings}
+          title="Settings coming soon"
+          description="Classifier configuration and runner preferences will be surfaced here when available."
+        />
+      )}
     </section>
   );
 }

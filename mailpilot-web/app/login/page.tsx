@@ -1,5 +1,6 @@
 import { readCsrfTokenFromCookies } from "@/lib/auth/csrf";
 import { getCurrentUser } from "@/lib/auth/session";
+import { isDemoEntryUiEnabled } from "@/lib/demo";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { LoginForm } from "./LoginForm";
@@ -35,5 +36,11 @@ export default async function LoginPage({
     csrfToken = readCsrfTokenFromCookies(await cookies());
   }
 
-  return <LoginForm csrfToken={csrfToken} error={error} />;
+  return (
+    <LoginForm
+      csrfToken={csrfToken}
+      error={error}
+      showDemoEntry={isDemoEntryUiEnabled()}
+    />
+  );
 }

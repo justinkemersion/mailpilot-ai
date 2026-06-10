@@ -11,12 +11,14 @@ import { DemoBanner } from "@/components/DemoBanner";
 interface AppShellProps {
   userLabel: string;
   showDemoBanner?: boolean;
+  isDemoUser?: boolean;
   children: ReactNode;
 }
 
 export function AppShell({
   userLabel,
   showDemoBanner = false,
+  isDemoUser = false,
   children,
 }: AppShellProps) {
   const pathname = usePathname();
@@ -40,6 +42,7 @@ export function AppShell({
     <div className="flex min-h-screen overflow-x-hidden bg-surface-base">
       <Sidebar
         userLabel={userLabel}
+        isDemoUser={isDemoUser}
         mobileOpen={mobileOpen}
         onMobileClose={closeMobile}
       />
@@ -53,9 +56,9 @@ export function AppShell({
         >
           Skip to content
         </a>
-        <TopBar title={title} onMenuOpen={() => setMobileOpen(true)} />
+        <TopBar title={title} isDemoUser={isDemoUser} onMenuOpen={() => setMobileOpen(true)} />
         <Suspense fallback={null}>
-          <DemoBanner showEnvBanner={showDemoBanner} />
+          <DemoBanner showBanner={showDemoBanner} />
         </Suspense>
         <main
           id="dashboard-main"
