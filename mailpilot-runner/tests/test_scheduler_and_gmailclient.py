@@ -4,7 +4,8 @@ from httplib2 import Response
 
 from mailpilot.gmail_client import GmailApiError, GmailClient
 from mailpilot.models import Account
-from mailpilot.scheduler import run_forever, run_once
+from mailpilot.scheduler import _run_result_to_dict, run_forever, run_once
+from mailpilot.email_processor import RunResult
 
 
 def _dummy_account() -> Account:
@@ -178,4 +179,20 @@ def test_scheduler_run_forever_reraises_unexpected_errors(monkeypatch):
 
     with pytest.raises(ValueError):
         run_forever(interval_seconds=1)
+
+
+def test_run_result_to_dict_includes_accounts_needing_reauth():
+    payload = _run_result_to_dict(
+        RunResult(
+            accounts_processed=2,
+            candidates=0,
+            processed=0,
+            labels_applied=0,
+            archived=0,
+            spam_marked=0,
+            dry_run=False,
+            accounts_needing_reauth=["stale@example.com"],
+        )
+    )
+    assert payload["accounts_needing_reauth"] == ["stale@example.com"]
 

@@ -8,17 +8,62 @@ export interface StatChip {
   value: number;
 }
 
+export type RunOutcomeKind = "success" | "reauth_required" | "reauth_partial";
+
+const REAUTH_HINT =
+  "Reconnect each address on the Accounts page. Google OAuth apps in Testing mode usually need re-consent about once a week.";
+
+export function getAccountsNeedingReauth(result: RunResult): string[] {
+  const raw = result.accounts_needing_reauth;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((email): email is string => typeof email === "string" && email.length > 0);
+}
+
+export function classifyRunOutcome(result: RunResult): RunOutcomeKind {
+  const reauth = getAccountsNeedingReauth(result);
+  if (reauth.length === 0) return "success";
+
+  const processed = result.processed ?? 0;
+  const accounts = result.accounts_processed ?? 0;
+  if (processed === 0 && accounts > 0 && reauth.length >= accounts) {
+    return "reauth_required";
+  }
+  return "reauth_partial";
+}
+
+export function buildReauthSummary(reauthEmails: string[]): string {
+  if (reauthEmails.length === 1) {
+    return `Gmail sign-in expired or was revoked for ${reauthEmails[0]}. ${REAUTH_HINT}`;
+  }
+  return `Gmail sign-in expired or was revoked for ${reauthEmails.length} accounts (${reauthEmails.join(", ")}). ${REAUTH_HINT}`;
+}
+
 export function buildSuccessSummary(result: RunResult, dryRun: boolean): string {
+  const reauth = getAccountsNeedingReauth(result);
+  const outcome = classifyRunOutcome(result);
+
+  if (outcome === "reauth_required") {
+    return buildReauthSummary(reauth);
+  }
+
   const accounts = result.accounts_processed ?? 0;
   const processed = result.processed ?? 0;
   const accountWord = accounts === 1 ? "account" : "accounts";
   const messageWord = processed === 1 ? "message" : "messages";
 
   if (dryRun) {
-    return `Preview complete — would have scanned ${accounts.toLocaleString()} ${accountWord} and processed ${processed.toLocaleString()} ${messageWord}.`;
+    const base = `Preview complete — would have scanned ${accounts.toLocaleString()} ${accountWord} and processed ${processed.toLocaleString()} ${messageWord}.`;
+    if (outcome === "reauth_partial") {
+      return `${base} Some accounts could not be accessed and need Gmail reconnect.`;
+    }
+    return base;
   }
 
-  return `Run complete — ${accounts.toLocaleString()} ${accountWord} scanned, ${processed.toLocaleString()} ${messageWord} processed.`;
+  const base = `Run complete — ${accounts.toLocaleString()} ${accountWord} scanned, ${processed.toLocaleString()} ${messageWord} processed.`;
+  if (outcome === "reauth_partial") {
+    return `${base} Some accounts could not be accessed and need Gmail reconnect.`;
+  }
+  return base;
 }
 
 export function buildStatChips(result: RunResult): StatChip[] {
@@ -49,6 +94,7 @@ export function buildTechnicalBreakdown(result: RunResult): string[] {
   const skippedBudget = result.skipped_by_budget ?? 0;
   const skippedAiLimit = result.skipped_by_ai_limit ?? 0;
   const skippedClaim = result.skipped_by_claim_conflict ?? 0;
+  const reauth = getAccountsNeedingReauth(result);
 
   lines.push(`Accounts scanned: ${accounts.toLocaleString()}`);
   lines.push(`Messages found: ${candidates.toLocaleString()}`);
@@ -64,6 +110,9 @@ export function buildTechnicalBreakdown(result: RunResult): string[] {
   }
   if (skippedClaim > 0) {
     lines.push(`Skipped by claim conflict: ${skippedClaim.toLocaleString()}`);
+  }
+  if (reauth.length > 0) {
+    lines.push(`Needs Gmail reconnect: ${reauth.join(", ")}`);
   }
 
   const label = classifierLabel(result);

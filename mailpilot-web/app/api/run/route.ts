@@ -37,6 +37,7 @@ export interface RunJobRow {
     ai_limit_hit?: boolean;
     ai_limit_message?: string | null;
     demo_message?: string;
+    accounts_needing_reauth?: string[];
   } & ClassifierInfo) | null;
   error: string | null;
   progress: RunJobProgress | null;
