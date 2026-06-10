@@ -16,6 +16,7 @@ import { X } from "lucide-react";
 
 interface RunResultBannerProps {
   job: RunJobRow;
+  disconnectedEmails?: string[];
   onDismiss: () => void;
 }
 
@@ -51,7 +52,11 @@ function StatChips({
   );
 }
 
-export function RunResultBanner({ job, onDismiss }: RunResultBannerProps) {
+export function RunResultBanner({
+  job,
+  disconnectedEmails = [],
+  onDismiss,
+}: RunResultBannerProps) {
   if (job.status === "done" && job.result) {
     const r = job.result;
     const isDry = r.dry_run === true;
@@ -128,6 +133,13 @@ export function RunResultBanner({ job, onDismiss }: RunResultBannerProps) {
             ) : null}
           </p>
           <p className={cn("mt-1 text-sm", bodyClass)}>{summary}</p>
+          {disconnectedEmails.length > 0 ? (
+            <p className={cn("mt-2 text-sm", bodyClass)}>
+              Removed expired{" "}
+              {disconnectedEmails.length === 1 ? "connection" : "connections"} for{" "}
+              {disconnectedEmails.join(", ")}. Other accounts stay connected.
+            </p>
+          ) : null}
           {reauthEmails.length > 0 ? (
             <Link
               href="/dashboard/accounts"

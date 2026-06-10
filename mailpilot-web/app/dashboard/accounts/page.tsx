@@ -6,6 +6,7 @@ import {
 import { isDemoUser } from "@/lib/demo";
 import { redirect } from "next/navigation";
 import { AccountsEmptyState } from "@/components/AccountsEmptyState";
+import { ConnectedEmailsPanel } from "@/components/ConnectedEmailsPanel";
 import { DemoConnectNotice } from "@/components/DemoOverviewCard";
 import { ConnectGmailLink } from "../ConnectGmailLink";
 import { ConnectedAccountsList } from "../ConnectedAccountsList";
@@ -38,6 +39,10 @@ export default async function AccountsPage() {
       </div>
 
       {demo ? <DemoConnectNotice className="mb-4" /> : null}
+
+      {!demo && accounts.length > 0 ? (
+        <ConnectedEmailsPanel emails={accounts.map((a) => a.email)} />
+      ) : null}
 
       {accounts.length === 0 ? (
         <AccountsEmptyState />

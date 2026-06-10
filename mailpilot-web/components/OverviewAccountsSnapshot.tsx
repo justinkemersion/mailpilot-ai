@@ -20,8 +20,11 @@ function CompactAccountCard({
   account: ConnectedAccount;
   lastSyncedAt: string | null;
 }) {
-  const primary =
-    account.display_name?.trim() || account.email.split("@")[0] || account.email;
+  const displayName = account.display_name?.trim();
+  const showDisplayName =
+    displayName != null &&
+    displayName.length > 0 &&
+    displayName.toLowerCase() !== account.email.split("@")[0]?.toLowerCase();
 
   return (
     <div
@@ -41,17 +44,19 @@ function CompactAccountCard({
         </div>
         <div className="min-w-0 flex-1">
           <p
-            className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50"
-            title={account.email}
-          >
-            {primary}
-          </p>
-          <p
-            className="truncate text-xs text-zinc-500 dark:text-zinc-400"
+            className="break-all text-sm font-semibold text-zinc-900 dark:text-zinc-50"
             title={account.email}
           >
             {account.email}
           </p>
+          {showDisplayName ? (
+            <p
+              className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400"
+              title={displayName}
+            >
+              {displayName}
+            </p>
+          ) : null}
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3 sm:shrink-0 sm:justify-end">

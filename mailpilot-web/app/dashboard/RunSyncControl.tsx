@@ -7,6 +7,7 @@ import type {
 import { RunResultBanner } from "@/components/RunResultBanner";
 import { RunSyncButton, type RunSyncOptions } from "@/components/RunSyncButton";
 import { classifierLabel } from "@/lib/formatClassifier";
+import { getAccountsNeedingReauth } from "@/lib/runResultPresentation";
 import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { Cpu, Loader2 } from "lucide-react";
@@ -93,6 +94,20 @@ async function fetchRunJobRow(jobId: number): Promise<RunJobRow | null> {
   const res = await fetch(`/api/run?job_id=${jobId}`);
   if (!res.ok) return null;
   return (await res.json()) as RunJobRow | null;
+}
+
+async function disconnectExpiredAccounts(
+  emails: string[]
+): Promise<string[]> {
+  if (emails.length === 0) return [];
+  const res = await fetch("/api/accounts/disconnect-expired", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ emails }),
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { disconnected?: string[] };
+  return Array.isArray(data.disconnected) ? data.disconnected : [];
 }
 
 function StatusIndicator({ status }: { status: JobStatus }) {
@@ -243,9 +258,11 @@ export function RunSyncControl({
   const [timedOut, setTimedOut] = useState(false);
   const [activityLog, setActivityLog] = useState<RunJobProgress[]>([]);
   const [dismissedJobId, setDismissedJobId] = useState<number | null>(null);
+  const [disconnectedEmails, setDisconnectedEmails] = useState<string[]>([]);
   const prevJobRef = useRef<{ id: number; status: RunJobRow["status"] } | null>(
     null
   );
+  const prunedJobIdsRef = useRef<Set<number>>(new Set());
 
   const activeJobId =
     job?.status === "pending" || job?.status === "running" ? job.id : null;
@@ -254,6 +271,30 @@ export function RunSyncControl({
     const data = await fetchRunJobRow(jobId);
     if (data?.id === jobId) setJob(data);
   }, []);
+
+  const pruneExpiredForJob = useCallback(
+    async (completedJob: RunJobRow) => {
+      if (isDemo || completedJob.status !== "done" || !completedJob.result) {
+        return;
+      }
+      if (prunedJobIdsRef.current.has(completedJob.id)) return;
+
+      const emails = getAccountsNeedingReauth(completedJob.result);
+      if (emails.length === 0) return;
+
+      prunedJobIdsRef.current.add(completedJob.id);
+      try {
+        const removed = await disconnectExpiredAccounts(emails);
+        if (removed.length > 0) {
+          setDisconnectedEmails(removed);
+          router.refresh();
+        }
+      } catch (err) {
+        console.error("Failed to disconnect expired accounts:", err);
+      }
+    },
+    [isDemo, router]
+  );
 
   const progressEntry = job?.progress;
   useEffect(() => {
@@ -275,11 +316,12 @@ export function RunSyncControl({
       const wasActive = prev.status === "pending" || prev.status === "running";
       if (wasActive && job.status === "done") {
         setDismissedJobId(null);
+        void pruneExpiredForJob(job);
         router.refresh();
       }
     }
     prevJobRef.current = { id: job.id, status: job.status };
-  }, [job, router]);
+  }, [job, pruneExpiredForJob, router]);
 
   useEffect(() => {
     if (activeJobId == null) return;
@@ -341,6 +383,7 @@ export function RunSyncControl({
     setTimedOut(false);
     setActivityLog([]);
     setDismissedJobId(null);
+    setDisconnectedEmails([]);
     try {
       const res = await fetch("/api/run", {
         method: "POST",
@@ -350,6 +393,9 @@ export function RunSyncControl({
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const newJob = (await res.json()) as RunJobRow;
       setJob(newJob);
+      if (newJob.status === "done") {
+        void pruneExpiredForJob(newJob);
+      }
       if (isDemo && newJob.status === "done") {
         router.refresh();
       }
@@ -430,6 +476,7 @@ export function RunSyncControl({
         {showResult && job ? (
           <RunResultBanner
             job={job}
+            disconnectedEmails={disconnectedEmails}
             onDismiss={() => setDismissedJobId(job.id)}
           />
         ) : null}

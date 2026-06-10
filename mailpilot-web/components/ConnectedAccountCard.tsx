@@ -27,10 +27,13 @@ export function ConnectedAccountCard({
   onToggle,
   onDisconnect,
 }: ConnectedAccountCardProps) {
-  const title = account.email;
-  const primary =
-    account.display_name?.trim() || account.email.split("@")[0] || account.email;
   const controlsDisabled = isPatching || isDeleting;
+  const title = account.email;
+  const displayName = account.display_name?.trim();
+  const showDisplayName =
+    displayName != null &&
+    displayName.length > 0 &&
+    displayName.toLowerCase() !== account.email.split("@")[0]?.toLowerCase();
 
   return (
     <li
@@ -51,17 +54,16 @@ export function ConnectedAccountCard({
           </div>
           <div className="min-w-0 flex-1">
             <p
-              className="truncate text-sm font-semibold text-text-primary"
-              title={title}
-            >
-              {primary}
-            </p>
-            <p
-              className="truncate text-xs text-text-muted"
+              className="break-all text-sm font-semibold text-text-primary"
               title={title}
             >
               {account.email}
             </p>
+            {showDisplayName ? (
+              <p className="mt-0.5 truncate text-xs text-text-muted" title={displayName}>
+                {displayName}
+              </p>
+            ) : null}
             <div className="mt-1.5 sm:hidden">
               <StatusBadge status={processingEnabled ? "enabled" : "disabled"} />
             </div>
