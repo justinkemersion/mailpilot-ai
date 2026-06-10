@@ -21,8 +21,9 @@ export function ConnectedEmailsPanel({ emails }: ConnectedEmailsPanelProps) {
           <li
             key={email}
             className="inline-flex min-h-9 max-w-full items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-950 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100"
+            title={email}
           >
-            <span className="break-all">{email}</span>
+            <span className="whitespace-nowrap">{email}</span>
           </li>
         ))}
       </ul>

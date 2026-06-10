@@ -44,7 +44,7 @@ function CompactAccountCard({
         </div>
         <div className="min-w-0 flex-1">
           <p
-            className="break-all text-sm font-semibold text-zinc-900 dark:text-zinc-50"
+            className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50"
             title={account.email}
           >
             {account.email}
