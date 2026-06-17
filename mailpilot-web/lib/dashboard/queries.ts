@@ -49,6 +49,41 @@ export interface DashboardMetrics {
   by_category: Record<string, number>;
 }
 
+export type ActivitySort = "received_desc" | "account_asc" | "account_desc";
+
+export const ACTIVITY_SORT_OPTIONS: Array<{ value: ActivitySort; label: string }> = [
+  { value: "received_desc", label: "Received (newest)" },
+  { value: "account_asc", label: "Mailbox A–Z" },
+  { value: "account_desc", label: "Mailbox Z–A" },
+];
+
+function parseActivitySort(value: string | null | undefined): ActivitySort {
+  if (value === "account_asc" || value === "account_desc") return value;
+  return "received_desc";
+}
+
+function activityOrderParams(sort: ActivitySort): Array<[string, string]> {
+  if (sort === "account_asc") {
+    return [
+      ["order", "accounts(email).asc"],
+      ["order", "message_received_at.desc.nullslast"],
+      ["order", "id.asc"],
+    ];
+  }
+  if (sort === "account_desc") {
+    return [
+      ["order", "accounts(email).desc"],
+      ["order", "message_received_at.desc.nullslast"],
+      ["order", "id.asc"],
+    ];
+  }
+  return [
+    ["order", "message_received_at.desc.nullslast"],
+    ["order", "processed_at.desc"],
+    ["order", "id.asc"],
+  ];
+}
+
 function userFilter(userId: string): [string, string] {
   return ["user_id", `eq.${userId}`];
 }
@@ -151,11 +186,13 @@ export async function getEmailActivityPage(
     offset?: number;
     limit?: number;
     category?: string | null;
+    sort?: ActivitySort | string | null;
   } = {}
 ): Promise<EmailActivityPage> {
   if (await isDemoRequest()) return getDemoEmailActivityPage(options);
   const offset = Math.max(0, options.offset ?? 0);
   const limit = Math.min(100, Math.max(1, options.limit ?? EMAIL_ACTIVITY_PAGE_SIZE));
+  const sort = parseActivitySort(options.sort ?? null);
   const filters: Array<[string, string]> = [userFilter(userId)];
   if (options.category) {
     filters.push(["category", `eq.${options.category}`]);
@@ -166,9 +203,7 @@ export async function getEmailActivityPage(
       `/processed_emails${postgrestParams([
         ["select", EMAIL_ACTIVITY_SELECT],
         ...filters,
-        ["order", "message_received_at.desc.nullslast"],
-        ["order", "processed_at.desc"],
-        ["order", "id.asc"],
+        ...activityOrderParams(sort),
         ["limit", limit],
         ["offset", offset],
       ])}`

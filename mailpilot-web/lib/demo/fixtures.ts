@@ -612,8 +612,16 @@ export function createSimulatedDemoSyncJob(): RunJobRow {
   };
 }
 
-function sortedDemoEmails(): ProcessedEmailRow[] {
+function sortedDemoEmails(
+  sort: "received_desc" | "account_asc" | "account_desc" = "received_desc"
+): ProcessedEmailRow[] {
   return [...DEMO_PROCESSED_EMAILS].sort((a, b) => {
+    if (sort === "account_asc" || sort === "account_desc") {
+      const aEmail = (a.accounts?.email ?? "").toLowerCase();
+      const bEmail = (b.accounts?.email ?? "").toLowerCase();
+      const byEmail = aEmail.localeCompare(bEmail);
+      if (byEmail !== 0) return sort === "account_asc" ? byEmail : -byEmail;
+    }
     const aTs = new Date(a.message_received_at ?? a.processed_at).getTime();
     const bTs = new Date(b.message_received_at ?? b.processed_at).getTime();
     return bTs - aTs;
@@ -671,11 +679,16 @@ export function getDemoEmailActivityPage(
     offset?: number;
     limit?: number;
     category?: string | null;
+    sort?: "received_desc" | "account_asc" | "account_desc" | string | null;
   } = {}
 ): EmailActivityPage {
   const offset = Math.max(0, options.offset ?? 0);
   const limit = Math.min(100, Math.max(1, options.limit ?? 50));
-  let filtered = sortedDemoEmails();
+  let filtered = sortedDemoEmails(
+    options.sort === "account_asc" || options.sort === "account_desc"
+      ? options.sort
+      : "received_desc"
+  );
   if (options.category) {
     filtered = filtered.filter((row) => row.category === options.category);
   }
@@ -789,5 +802,36 @@ export function getDemoActionLogPage(options: {
     total: filtered.length,
     offset,
     limit,
+  };
+}
+
+export function getDemoTeachPreview(
+  processedEmailId: number,
+  actionPolicy: "archive" | "never_archive"
+) {
+  const row = DEMO_PROCESSED_EMAILS.find((email) => email.id === processedEmailId);
+  const accountEmail = row?.accounts?.email ?? "demo@mailpilot.app";
+  const truncated = processedEmailId % 2 === 0;
+  const scan_limit = 500;
+  const scanned_count = truncated ? scan_limit : 12;
+  const total_candidate_count = truncated ? 842 : 12;
+  const match_count: number = truncated ? 8 : 2;
+  const confirm_body = truncated
+    ? `MailPilot scanned the first ${scanned_count} candidate messages (limit ${scan_limit}) and found ${match_count} matches. More older matching messages may exist.`
+    : `This will mark ${match_count} similar messages in this mailbox.`;
+
+  return {
+    match_count,
+    scanned_count,
+    scan_limit,
+    truncated,
+    total_candidate_count,
+    includes_source: true,
+    account_email: accountEmail,
+    summary:
+      actionPolicy === "never_archive"
+        ? `Taught MailPilot to never auto-archive similar mail in ${accountEmail}. Marked ${match_count} messages in MailPilot.`
+        : `Taught MailPilot to archive similar mail when approved in ${accountEmail}. Marked ${match_count} messages in MailPilot.`,
+    confirm_body,
   };
 }

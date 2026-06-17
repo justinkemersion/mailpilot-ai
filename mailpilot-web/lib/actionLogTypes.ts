@@ -5,6 +5,7 @@ export type MailActionTaken =
   | "archive_blocked"
   | "undo_archive"
   | "teach"
+  | "teach_revert"
   | "cleanup_archive"
   | "cleanup_keep";
 
@@ -50,6 +51,8 @@ export function actionTakenLabel(action: MailActionTaken): string {
       return "Archive blocked";
     case "teach":
       return "Preference taught";
+    case "teach_revert":
+      return "Teach reverted";
     case "undo_archive":
       return "Archive undone";
     case "archive":

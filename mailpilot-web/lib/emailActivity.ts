@@ -15,6 +15,7 @@ export interface ProcessedEmailRow {
   resolution_status?: string | null;
   inbox_status?: string | null;
   category_id?: number | null;
+  taught_preference_id?: number | null;
   /** Demo fixtures only — classification rationale for UI preview */
   classification_note?: string | null;
 }
@@ -25,7 +26,7 @@ export const EMAIL_ACTIVITY_PAGE_SIZE = 50;
 export const OVERVIEW_ACTIVITY_PREVIEW_LIMIT = 10;
 
 export const EMAIL_ACTIVITY_SELECT =
-  "id,gmail_message_id,account_id,accounts(email),category,subject,sender,processed_at,message_received_at,actions_taken,was_archived,applied_label_names,proposed_action,resolution_status,inbox_status,category_id";
+  "id,gmail_message_id,account_id,accounts(email),category,subject,sender,processed_at,message_received_at,actions_taken,was_archived,applied_label_names,proposed_action,resolution_status,inbox_status,category_id,taught_preference_id";
 
 /** Parse From-style strings: "Name" <a@b>, Name <a@b>, a@b */
 export function parseSender(raw: string | null): {

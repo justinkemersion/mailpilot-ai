@@ -14,6 +14,14 @@ import {
   TeachActionMenu,
   type TeachButtonState,
 } from "@/components/TeachActionMenu";
+import {
+  TeachConfirmDialog,
+  type TeachPreviewData,
+} from "@/components/TeachConfirmDialog";
+import {
+  ACTIVITY_SORT_OPTIONS,
+  type ActivitySort,
+} from "@/lib/dashboard/queries";
 import { accountAvatarClass, accountInitial } from "@/lib/accountAvatar";
 import { CATEGORY_ORDER } from "@/lib/categories";
 import {
@@ -54,6 +62,7 @@ async function fetchActivityPage(params: {
   offset: number;
   limit: number;
   category: string | null;
+  sort: ActivitySort;
 }): Promise<{
   rows: ProcessedEmailRow[];
   total: number;
@@ -63,6 +72,7 @@ async function fetchActivityPage(params: {
   const query = new URLSearchParams({
     offset: String(params.offset),
     limit: String(params.limit),
+    sort: params.sort,
   });
   if (params.category) query.set("category", params.category);
   const res = await fetch(`/api/activity?${query.toString()}`);
@@ -92,9 +102,21 @@ export function EmailActivityTable({
   const [rows, setRows] = useState<ProcessedEmailRow[]>(initialRows);
   const [total, setTotal] = useState(initialTotal);
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [sort, setSort] = useState<ActivitySort>("received_desc");
   const [searchQuery, setSearchQuery] = useState("");
   const [undoState, setUndoState] = useState<UndoStateMap>({});
   const [teachState, setTeachState] = useState<TeachStateMap>({});
+  const [teachDialogOpen, setTeachDialogOpen] = useState(false);
+  const [teachDialogRow, setTeachDialogRow] = useState<ProcessedEmailRow | null>(null);
+  const [teachDialogPolicy, setTeachDialogPolicy] = useState<
+    "archive" | "never_archive" | null
+  >(null);
+  const [teachPreview, setTeachPreview] = useState<TeachPreviewData | null>(null);
+  const [teachPreviewLoading, setTeachPreviewLoading] = useState(false);
+  const [teachPreviewError, setTeachPreviewError] = useState<string | null>(null);
+  const [teachConfirming, setTeachConfirming] = useState(false);
+  const [revertPreferenceId, setRevertPreferenceId] = useState<number | null>(null);
+  const [revertPending, setRevertPending] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingCategory, setLoadingCategory] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -153,6 +175,7 @@ export function EmailActivityTable({
           offset: 0,
           limit: pageSize,
           category: next || null,
+          sort,
         });
         setRows(page.rows);
         setTotal(page.total);
@@ -165,7 +188,35 @@ export function EmailActivityTable({
         setLoadingCategory(false);
       }
     },
-    [paginate, pageSize]
+    [paginate, pageSize, sort]
+  );
+
+  const handleSortChange = useCallback(
+    async (next: ActivitySort) => {
+      setSort(next);
+      setFetchError(null);
+      if (!paginate) return;
+
+      setLoadingCategory(true);
+      try {
+        const page = await fetchActivityPage({
+          offset: 0,
+          limit: pageSize,
+          category: categoryFilter || null,
+          sort: next,
+        });
+        setRows(page.rows);
+        setTotal(page.total);
+      } catch (err) {
+        console.error("Failed to sort activity:", err);
+        setFetchError(
+          err instanceof Error ? err.message : "Could not reload emails."
+        );
+      } finally {
+        setLoadingCategory(false);
+      }
+    },
+    [paginate, pageSize, categoryFilter]
   );
 
   const displayRows = useMemo(() => {
@@ -190,6 +241,7 @@ export function EmailActivityTable({
         offset: rows.length,
         limit: pageSize,
         category: categoryFilter || null,
+        sort,
       });
       setRows((prev) => {
         const seen = new Set(prev.map((r) => r.id));
@@ -207,22 +259,71 @@ export function EmailActivityTable({
     }
   }
 
+  function closeTeachDialog() {
+    if (teachConfirming) return;
+    setTeachDialogOpen(false);
+    setTeachDialogRow(null);
+    setTeachDialogPolicy(null);
+    setTeachPreview(null);
+    setTeachPreviewError(null);
+    setTeachPreviewLoading(false);
+  }
+
   async function handleTeach(
     row: ProcessedEmailRow,
     actionPolicy: "archive" | "never_archive"
   ) {
+    setTeachDialogRow(row);
+    setTeachDialogPolicy(actionPolicy);
+    setTeachDialogOpen(true);
+    setTeachPreview(null);
+    setTeachPreviewError(null);
+    setTeachPreviewLoading(true);
+    setRevertPreferenceId(null);
+
+    try {
+      const res = await fetch(
+        `/api/messages/${row.id}/teach/preview?action_policy=${actionPolicy}`
+      );
+      const body = (await res.json().catch(() => ({}))) as TeachPreviewData & {
+        error?: string;
+        demo?: boolean;
+      };
+      if (!res.ok) {
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      setTeachPreview(body);
+    } catch (err) {
+      console.error("Teach preview failed:", err);
+      setTeachPreviewError(
+        err instanceof Error ? err.message : "Could not preview teach rule."
+      );
+    } finally {
+      setTeachPreviewLoading(false);
+    }
+  }
+
+  async function handleTeachConfirm() {
+    if (!teachDialogRow || !teachDialogPolicy) return;
+    const row = teachDialogRow;
+    const actionPolicy = teachDialogPolicy;
+
+    setTeachConfirming(true);
     setTeachState((s) => ({ ...s, [row.id]: "pending" }));
     try {
       const res = await fetch(`/api/messages/${row.id}/teach`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action_policy: actionPolicy }),
+        body: JSON.stringify({ action_policy: actionPolicy, apply_backfill: true }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
         demo?: boolean;
         message?: string;
         summary?: string;
+        preference?: { id: number };
+        backfill_count?: number;
+        truncated?: boolean;
       };
       if (!res.ok) {
         throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -233,13 +334,52 @@ export function EmailActivityTable({
           ? (body.message ?? "Demo teach simulated.")
           : (body.summary ?? "Preference saved for this mailbox.")
       );
+      if (body.preference?.id) {
+        setRevertPreferenceId(body.preference.id);
+      }
+      closeTeachDialog();
       router.refresh();
     } catch (err) {
       console.error("Teach failed:", err);
       setTeachState((s) => ({ ...s, [row.id]: "error" }));
-      setStatusMessage(
+      setTeachPreviewError(
         err instanceof Error ? err.message : "Could not save preference."
       );
+    } finally {
+      setTeachConfirming(false);
+    }
+  }
+
+  async function handleRevertTeach() {
+    if (!revertPreferenceId || revertPending) return;
+    setRevertPending(true);
+    try {
+      const res = await fetch(`/api/preferences/${revertPreferenceId}/revert-teach`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        summary?: string;
+        demo?: boolean;
+        message?: string;
+      };
+      if (!res.ok) {
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      setStatusMessage(
+        body.demo
+          ? (body.message ?? "Demo teach revert simulated.")
+          : (body.summary ?? "Teach rule reverted.")
+      );
+      setRevertPreferenceId(null);
+      router.refresh();
+    } catch (err) {
+      console.error("Teach revert failed:", err);
+      setStatusMessage(
+        err instanceof Error ? err.message : "Could not revert teach rule."
+      );
+    } finally {
+      setRevertPending(false);
     }
   }
 
@@ -300,14 +440,53 @@ export function EmailActivityTable({
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {statusMessage ?? ""}
       </p>
+      {!isPreview && statusMessage ? (
+        <div className="border-b border-border-subtle bg-surface-2 px-3 py-2 sm:px-4">
+          <p className="text-sm text-text-primary">{statusMessage}</p>
+          {revertPreferenceId ? (
+            <button
+              type="button"
+              onClick={() => void handleRevertTeach()}
+              disabled={revertPending}
+              className={cn(
+                "mt-1 text-sm font-medium text-accent hover:underline disabled:opacity-50",
+                focusRing
+              )}
+            >
+              {revertPending ? "Reverting…" : "Revert this rule"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {!isPreview ? (
         <div className="space-y-3 border-b border-border-subtle bg-surface-2 px-3 py-3 sm:px-4">
           <SearchInput value={searchQuery} onChange={setSearchQuery} />
-          <FilterTabs
-            options={filterOptions}
-            value={categoryFilter}
-            onChange={(v) => void handleCategoryChange(v)}
-          />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <FilterTabs
+              options={filterOptions}
+              value={categoryFilter}
+              onChange={(v) => void handleCategoryChange(v)}
+            />
+            <label className="flex items-center gap-2 text-sm text-text-muted">
+              <span className="shrink-0">Sort</span>
+              <select
+                value={sort}
+                onChange={(event) =>
+                  void handleSortChange(event.target.value as ActivitySort)
+                }
+                className={cn(
+                  "min-h-9 rounded-lg border border-border-subtle bg-surface-1 px-2 text-sm text-text-primary",
+                  focusRing
+                )}
+              >
+                {ACTIVITY_SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
       ) : null}
 
@@ -454,7 +633,27 @@ export function EmailActivityTable({
           ) : null}
         </div>
       ) : null}
+
+      <TeachConfirmDialog
+        open={teachDialogOpen}
+        row={teachDialogRow}
+        actionPolicy={teachDialogPolicy}
+        preview={teachPreview}
+        loading={teachPreviewLoading}
+        confirming={teachConfirming}
+        error={teachPreviewError}
+        onCancel={closeTeachDialog}
+        onConfirm={() => void handleTeachConfirm()}
+      />
     </div>
+  );
+}
+
+function RuleAppliedBadge() {
+  return (
+    <span className="inline-flex w-fit rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-800 dark:border-indigo-900/50 dark:bg-indigo-950/40 dark:text-indigo-200">
+      Rule applied
+    </span>
   );
 }
 
@@ -525,6 +724,7 @@ function ActivityMobileRow({
                 {resolutionStatusLabel(row.resolution_status)}
               </span>
             ) : null}
+            {row.taught_preference_id ? <RuleAppliedBadge /> : null}
           </div>
           {row.subject ? (
             <p
@@ -738,6 +938,7 @@ function ActivityDesktopRow({
               {resolutionStatusLabel(row.resolution_status)}
             </span>
           ) : null}
+          {row.taught_preference_id ? <RuleAppliedBadge /> : null}
         </div>
       </td>
       <td className="min-w-0 px-3 py-2.5 sm:px-4">

@@ -662,11 +662,13 @@ Auto-archive **only when ALL true**:
 | E | `edf296e` | `mail_preferences`, teach/preferences APIs, Activity teach menu, runner hard stops + `archive_blocked` logging. |
 | F | `436b9d9` | `GET /api/action-log`, Activity audit tab, resolution badges, `undo_archive` audit logging. |
 | G | `2d6ed17` | Preference-driven auto-archive with fail-closed `archive` action log; `work_device_sign_in` processor path. |
+| H | (pending commit) | Teach backfill + `teach_revert`, transparent 500-row scan metadata, Activity mailbox sort. |
 
 ### Deployment notes
 
 - Production was relaunched on `2026-06-17` at commit `4f5fb8d` (through Phase D).
 - Phase E requires Flux `005_mail_preferences.sql` and Supabase `20260617150000_add_mail_preferences.sql`.
+- Phase H requires Flux `006_teach_backfill.sql` and Supabase `20260617160000_teach_backfill.sql`.
 - Flux migrations `002_account_mailbox_scope.sql`, `003_mail_categories_and_resolution.sql`, and `004_mail_action_log.sql` were applied to project `mailpilot-ai`.
 - Flux CLI reported a checksum conflict for the pre-existing baseline `001_mailpilot_init.sql`, so the pending migration files were applied individually. The database is migrated, but those single-file applications were not recorded in the Flux migration ledger.
 - Production web container rebuilt healthy; `mailpilot-runner` restarted active.
@@ -679,6 +681,7 @@ Auto-archive **only when ALL true**:
 - Manual **Archive** removes `INBOX` via Gmail, updates `processed_emails.resolution_status='archived'`, and writes `mail_action_log.action_taken='cleanup_archive'`.
 - Manual **Keep** updates `processed_emails.resolution_status='kept'`, keeps Gmail labels/inbox unchanged, and writes `mail_action_log.action_taken='cleanup_keep'`.
 - **Teach** on Activity saves composite `mail_preferences` per mailbox and logs `teach` rows.
+- **Phase H (web):** teach confirms with preview scan metadata (`scanned_count`, `scan_limit`, `truncated`, optional `total_candidate_count`); backfills up to 500 matching `processed_emails` per mailbox (DB-only); `POST /api/preferences/:id/revert-teach` restores rows and logs `teach_revert`; Activity sort by mailbox email (`sort=account_asc|account_desc`).
 - Runner logs `archive_blocked` when a user archive preference matches but a hard stop blocks.
 - **Phase G (runner):** auto-archive only when a user `archive` preference matches; writes `archive` to `mail_action_log` first (fail closed if log fails). Legacy auto-archive remains opt-in via `MAILPILOT_LEGACY_AUTO_ARCHIVE=0` default.
 

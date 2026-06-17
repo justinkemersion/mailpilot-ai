@@ -7,6 +7,11 @@ import {
   validatePreferenceWrite,
 } from "@/lib/preferenceGuard";
 import { PREFERENCE_SELECT, type MailPreferenceRow } from "@/lib/preferences";
+import {
+  applyTeachBackfillRows,
+  scanTeachBackfillCandidates,
+  teachScanReasonFields,
+} from "@/lib/teachBackfill";
 import { fluxJson, postgrestParams } from "@/lib/flux/client";
 import { NextResponse } from "next/server";
 
@@ -42,7 +47,7 @@ function accountFor(row: TeachEmailRow) {
 
 /**
  * POST /api/messages/:processed_email_id/teach
- * Body: { action_policy: "archive" | "never_archive" }
+ * Body: { action_policy: "archive" | "never_archive", apply_backfill?: boolean }
  */
 export async function POST(
   request: Request,
@@ -71,8 +76,12 @@ export async function POST(
   }
 
   let actionPolicy: "archive" | "never_archive";
+  let applyBackfill = true;
   try {
-    const body = (await request.json()) as { action_policy?: unknown };
+    const body = (await request.json()) as {
+      action_policy?: unknown;
+      apply_backfill?: unknown;
+    };
     if (body.action_policy === "archive" || body.action_policy === "never_archive") {
       actionPolicy = body.action_policy;
     } else if (isCategoryActionPolicy(body.action_policy) && body.action_policy === "keep_inbox") {
@@ -85,6 +94,9 @@ export async function POST(
         { error: "action_policy must be archive or never_archive" },
         { status: 400 }
       );
+    }
+    if (body.apply_backfill === false) {
+      applyBackfill = false;
     }
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -163,6 +175,65 @@ export async function POST(
     return NextResponse.json({ error: "Failed to save preference" }, { status: 500 });
   }
 
+  let backfillCount = 0;
+  let backfillIds: number[] = [];
+  let scanMeta = {
+    match_count: 0,
+    scanned_count: 0,
+    scan_limit: 500,
+    truncated: false as boolean,
+    total_candidate_count: undefined as number | undefined,
+  };
+
+  if (applyBackfill) {
+    try {
+      const { matches, scan } = await scanTeachBackfillCandidates({
+        userId: user.id,
+        accountId: row.account_id,
+        preference: {
+          enabled: true,
+          match_type: teachMatch.match_type,
+          match_conditions_json: teachMatch.match_conditions_json,
+        },
+        actionPolicy,
+        sourceProcessedEmailId: row.id,
+        preferenceId: preference.id,
+      });
+      backfillIds = matches.map((m) => m.id);
+      backfillCount = await applyTeachBackfillRows(matches, preference.id, actionPolicy);
+      scanMeta = {
+        match_count: scan.match_count,
+        scanned_count: scan.scanned_count,
+        scan_limit: scan.scan_limit,
+        truncated: scan.truncated,
+        total_candidate_count: scan.total_candidate_count,
+      };
+    } catch (err) {
+      console.error("teach backfill:", err);
+      return NextResponse.json(
+        {
+          error: "Preference saved but backfill failed",
+          preference_id: preference.id,
+        },
+        { status: 500 }
+      );
+    }
+  }
+
+  const summary = teachSummary(
+    actionPolicy,
+    account?.email ?? null,
+    teachMatch.match_conditions_json,
+    applyBackfill
+      ? {
+          backfill_count: backfillCount,
+          truncated: scanMeta.truncated,
+          scanned_count: scanMeta.scanned_count,
+          scan_limit: scanMeta.scan_limit,
+        }
+      : undefined
+  );
+
   try {
     await fluxJson("/mail_action_log", {
       method: "POST",
@@ -176,19 +247,30 @@ export async function POST(
           category_id: row.category_id,
           preference_id: preference.id,
           action_taken: "teach",
-          reason_json: buildReasonJson({
-            account_email: account?.email ?? null,
-            account_purpose: account?.purpose ?? "other",
-            category_slug: row.category,
-            matched_preference_id: preference.id,
-            policy_applied: actionPolicy,
-            hard_stop_checked: false,
-            summary: teachSummary(
-              actionPolicy,
-              account?.email ?? null,
-              teachMatch.match_conditions_json
-            ),
-          }),
+          reason_json: {
+            ...buildReasonJson({
+              account_email: account?.email ?? null,
+              account_purpose: account?.purpose ?? "other",
+              category_slug: row.category,
+              matched_preference_id: preference.id,
+              policy_applied: actionPolicy,
+              hard_stop_checked: false,
+              summary,
+            }),
+            ...(applyBackfill
+              ? teachScanReasonFields(
+                  {
+                    match_count: scanMeta.match_count,
+                    scanned_count: scanMeta.scanned_count,
+                    scan_limit: scanMeta.scan_limit,
+                    truncated: scanMeta.truncated,
+                    total_candidate_count: scanMeta.total_candidate_count,
+                  },
+                  backfillCount,
+                  backfillIds
+                )
+              : { apply_backfill: false }),
+          },
           previous_state_json: {
             resolution_status: row.resolution_status ?? "unresolved",
             inbox_status: row.inbox_status ?? "unknown",
@@ -204,7 +286,11 @@ export async function POST(
   } catch (err) {
     console.error("teach action log:", err);
     return NextResponse.json(
-      { error: "Preference saved but audit log failed" },
+      {
+        error: "Preference saved but audit log failed",
+        preference_id: preference.id,
+        backfill_count: backfillCount,
+      },
       { status: 500 }
     );
   }
@@ -212,10 +298,13 @@ export async function POST(
   return NextResponse.json({
     ok: true,
     preference,
-    summary: teachSummary(
-      actionPolicy,
-      account?.email ?? null,
-      teachMatch.match_conditions_json
-    ),
+    backfill_count: backfillCount,
+    scanned_count: scanMeta.scanned_count,
+    scan_limit: scanMeta.scan_limit,
+    truncated: scanMeta.truncated,
+    ...(scanMeta.total_candidate_count != null
+      ? { total_candidate_count: scanMeta.total_candidate_count }
+      : {}),
+    summary,
   });
 }

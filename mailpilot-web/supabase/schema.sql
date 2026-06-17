@@ -120,6 +120,8 @@ CREATE TABLE public.processed_emails (
     inbox_status         TEXT         DEFAULT 'unknown'
                                       CHECK (inbox_status IN ('in_inbox', 'archived', 'unknown')),
     category_id          BIGINT       REFERENCES public.mail_categories(id),
+    taught_preference_id BIGINT       REFERENCES public.mail_preferences(id) ON DELETE SET NULL,
+    taught_revert_state  JSONB,
     -- Preserves the original SQLite idempotency guarantee.
     UNIQUE(account_id, gmail_message_id)
 );
@@ -141,6 +143,10 @@ CREATE POLICY "emails: update own"
 CREATE POLICY "emails: delete own"
     ON public.processed_emails FOR DELETE
     USING (auth.uid() = user_id);
+
+CREATE INDEX processed_emails_taught_preference_idx
+    ON public.processed_emails (taught_preference_id)
+    WHERE taught_preference_id IS NOT NULL;
 
 -- ============================================================
 -- mail_preferences
@@ -200,7 +206,7 @@ CREATE TABLE public.mail_action_log (
     category_id         BIGINT       REFERENCES public.mail_categories(id) ON DELETE SET NULL,
     preference_id       BIGINT       REFERENCES public.mail_preferences(id) ON DELETE SET NULL,
     action_taken        TEXT         NOT NULL
-                                       CHECK (action_taken IN ('label', 'archive', 'keep', 'archive_blocked', 'undo_archive', 'teach', 'cleanup_archive', 'cleanup_keep')),
+                                       CHECK (action_taken IN ('label', 'archive', 'keep', 'archive_blocked', 'undo_archive', 'teach', 'teach_revert', 'cleanup_archive', 'cleanup_keep')),
     reason_json         JSONB        NOT NULL,
     previous_state_json JSONB,
     created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()

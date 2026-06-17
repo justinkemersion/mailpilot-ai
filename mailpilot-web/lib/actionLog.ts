@@ -35,11 +35,34 @@ export function buildReasonJson(input: ActionLogReasonInput): Record<string, unk
 export function teachSummary(
   actionPolicy: CategoryActionPolicy,
   accountEmail: string | null,
-  conditions: CompositeMatchConditions
+  conditions: CompositeMatchConditions,
+  scan?: {
+    backfill_count?: number;
+    truncated?: boolean;
+    scanned_count?: number;
+    scan_limit?: number;
+  }
 ): string {
   const mailbox = accountEmail ? ` in ${accountEmail}` : "";
+  let base: string;
   if (actionPolicy === "never_archive") {
-    return `Taught MailPilot to never auto-archive similar mail${mailbox}.`;
+    base = `Taught MailPilot to never auto-archive similar mail${mailbox}.`;
+  } else {
+    base = `Taught MailPilot to archive similar mail when approved${mailbox}.`;
   }
-  return `Taught MailPilot to archive similar mail when approved${mailbox}.`;
+  if (scan?.backfill_count != null && scan.backfill_count > 0) {
+    base += ` Marked ${scan.backfill_count} message${scan.backfill_count === 1 ? "" : "s"} in MailPilot.`;
+  }
+  if (scan?.truncated && scan.scanned_count != null && scan.scan_limit != null) {
+    base += ` Scanned the first ${scan.scanned_count} candidates (limit ${scan.scan_limit}); older matches may remain.`;
+  }
+  return base;
+}
+
+export function teachRevertSummary(
+  accountEmail: string | null,
+  restoredCount: number
+): string {
+  const mailbox = accountEmail ? ` for ${accountEmail}` : "";
+  return `Reverted teach rule${mailbox} and restored ${restoredCount} message${restoredCount === 1 ? "" : "s"}.`;
 }

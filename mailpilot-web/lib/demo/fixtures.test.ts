@@ -25,4 +25,11 @@ describe("demo fixtures", () => {
     expect(page.rows.every((r) => r.category === "receipts")).toBe(true);
     expect(page.total).toBeGreaterThan(0);
   });
+
+  it("sorts activity by mailbox email ascending", () => {
+    const page = getDemoEmailActivityPage({ sort: "account_asc", limit: 100 });
+    const emails = page.rows.map((row) => row.accounts?.email ?? "");
+    const sorted = [...emails].sort((a, b) => a.localeCompare(b));
+    expect(emails).toEqual(sorted);
+  });
 });

@@ -65,6 +65,9 @@ function actionBadgeClass(action: MailActionTaken): string {
   if (action === "teach") {
     return "border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-900/50 dark:bg-indigo-950/40 dark:text-indigo-200";
   }
+  if (action === "teach_revert") {
+    return "border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-900/50 dark:bg-violet-950/40 dark:text-violet-200";
+  }
   if (action === "cleanup_archive" || action === "cleanup_keep") {
     return "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200";
   }
@@ -79,6 +82,7 @@ export function ActionLogTable() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [revertPendingId, setRevertPendingId] = useState<number | null>(null);
   const limit = 50;
 
   const load = useCallback(
@@ -106,6 +110,30 @@ export function ActionLogTable() {
   }, [load]);
 
   const hasMore = useMemo(() => rows.length < total, [rows.length, total]);
+
+  async function handleRevertTeach(preferenceId: number) {
+    setRevertPendingId(preferenceId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/preferences/${preferenceId}/revert-teach`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        summary?: string;
+        message?: string;
+        demo?: boolean;
+      };
+      if (!res.ok) {
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      await load(0, false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not revert teach rule.");
+    } finally {
+      setRevertPendingId(null);
+    }
+  }
 
   if (loading) {
     return <LoadingSkeleton variant="table" rows={4} />;
@@ -197,6 +225,21 @@ export function ActionLogTable() {
                     ) : null}
                     {explain ? (
                       <p className="mt-2 text-sm text-text-muted">{explain}</p>
+                    ) : null}
+                    {row.action_taken === "teach" && row.preference_id ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleRevertTeach(row.preference_id!)}
+                        disabled={revertPendingId === row.preference_id}
+                        className={cn(
+                          "mt-2 text-sm font-medium text-accent hover:underline disabled:opacity-50",
+                          focusRing
+                        )}
+                      >
+                        {revertPendingId === row.preference_id
+                          ? "Reverting…"
+                          : "Revert teach"}
+                      </button>
                     ) : null}
                   </div>
                 </div>
