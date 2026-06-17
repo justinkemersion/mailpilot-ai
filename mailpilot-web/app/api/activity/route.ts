@@ -1,9 +1,8 @@
 import { getCurrentUser } from "@/lib/auth/session";
-import { getEmailActivityPage, type ActivitySort } from "@/lib/dashboard/queries";
+import { getEmailActivityPage } from "@/lib/dashboard/queries";
+import { parseActivitySort } from "@/lib/activitySort";
 import { EMAIL_ACTIVITY_PAGE_SIZE } from "@/lib/emailActivity";
 import { NextResponse } from "next/server";
-
-const SORT_VALUES = new Set<ActivitySort>(["received_desc", "account_asc", "account_desc"]);
 
 /** GET /api/activity — paginated processed email history for the authenticated user. */
 export async function GET(request: Request) {
@@ -19,11 +18,7 @@ export async function GET(request: Request) {
     10
   );
   const category = searchParams.get("category");
-  const sortParam = searchParams.get("sort");
-  const sort =
-    sortParam && SORT_VALUES.has(sortParam as ActivitySort)
-      ? (sortParam as ActivitySort)
-      : "received_desc";
+  const sort = parseActivitySort(searchParams.get("sort"));
 
   const page = await getEmailActivityPage(user.id, {
     offset: Number.isFinite(offset) ? offset : 0,

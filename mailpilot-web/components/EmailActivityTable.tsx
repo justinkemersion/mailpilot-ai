@@ -21,7 +21,7 @@ import {
 import {
   ACTIVITY_SORT_OPTIONS,
   type ActivitySort,
-} from "@/lib/dashboard/queries";
+} from "@/lib/activitySort";
 import { accountAvatarClass, accountInitial } from "@/lib/accountAvatar";
 import { CATEGORY_ORDER } from "@/lib/categories";
 import {
