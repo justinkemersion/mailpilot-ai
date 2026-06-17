@@ -1,8 +1,8 @@
 # MailPilot Phase 9 — Scoped Inbox Resolution
 
 > Follow-up to [`mailpilot-phase-7-8-showcase-closure.md`](mailpilot-phase-7-8-showcase-closure.md) (UI showcase complete).
-> **Status:** Approved with revisions — ready for implementation.
-> **Revision:** 2026-06-17 — safety, audit-first sequencing, resolution language.
+> **Status:** Phases A-D implemented, committed, pushed, and deployed; Phases E-G remain.
+> **Revision:** 2026-06-17 — Phase D reconciliation after deployment.
 
 **Goal:** MailPilot proposes what is safe to clear; the user teaches scoped rules per mailbox; security-sensitive mail never auto-archives by default.
 
@@ -562,18 +562,18 @@ Auto-archive **only when ALL true**:
 - [ ] `test_hard_stops_prevent_archive` — Tier-3 never archived despite archive preference
 - [ ] `test_archive_blocked_logged` — preference matched + hard stop → `archive_blocked` row
 - [ ] `test_broad_preference_rejected` — domain-only archive pref for security category rejected
-- [ ] `test_account_fallback_no_archive` — account `default_archive_policy` never resolves to archive
+- [x] `test_account_fallback_no_archive` — covered by `test_account_fallback_never_archive`
 - [ ] `test_category_partial_unique_indexes` — no duplicate global slugs per user
-- [ ] `test_policy_preview_dry_run` — preview diff without Gmail modify
+- [x] `test_policy_preview_dry_run` — covered by `test_policy_preview_detects_newsletter_change`
 - [ ] `test_work_device_sign_in_composite_pref`
-- [ ] `test_legacy_auto_archive_flag`
+- [x] `test_legacy_auto_archive_flag` — covered by `test_newsletters_legacy_auto_archive`
 - [ ] `test_action_log_required_before_auto_archive` — log failure prevents archive
-- [ ] Existing: `test_multi_account_isolation`, `test_sender_safety`, `test_email_processor`
+- [x] Existing: `test_multi_account_isolation`, `test_sender_safety`, `test_email_processor`
 
 ### Web (Vitest)
 
 - [ ] `resolutionPresentation.test.ts` — status labels, blocked copy
-- [ ] `cleanupCandidates.test.ts` — tier grouping by `resolution_status=unresolved`
+- [x] `cleanupCandidates.test.ts` — covered by `cleanup.test.ts` cleanup grouping and action normalization
 - [ ] `preferenceGuard.test.ts` — broad-preference rejection rules
 
 ### Manual smoke
@@ -585,6 +585,7 @@ Auto-archive **only when ALL true**:
 - [ ] Phase G: approved rule archives on work account only
 - [ ] Hard-stop message: `archive_blocked` in log, stays in inbox
 - [ ] Undo restores INBOX; audit shows `undo_archive`
+- [x] Production deploy smoke: web healthy, runner active, Flux health check OK, `/dashboard/cleanup` unauthenticated redirects, `/api/cleanup/candidates` returns 401 unauthenticated, demo Cleanup page renders expected tier headings.
 
 ---
 
@@ -645,7 +646,38 @@ Auto-archive **only when ALL true**:
 | A | Baseline instrumentation | done |
 | B | Mailbox scopes on accounts | done |
 | C | Categories + PolicyResolver + dry-run preview | done |
-| D | Cleanup + action log foundation | pending |
+| D | Cleanup + action log foundation | done |
 | E | Teach + preferences + archive_blocked logging | pending |
 | F | Audit UI, explain, undo logging | pending |
 | G | Cautious automation | pending |
+
+### Implemented commits
+
+| Phase | Commit | Notes |
+|-------|--------|-------|
+| A | `3059fac` | Baseline labeled-not-archived metrics, archive-policy env inventory, plan creation. |
+| B | `68bd8b1` | Account mailbox scope columns, scope API, account UI scope controls. |
+| C | `8fdcdcb` | `mail_categories`, `PolicyResolver`, dry-run previews, legacy auto-archive flag, settings category defaults. |
+| D | `4f5fb8d` | `mail_action_log`, Cleanup page, cleanup candidate/action APIs, manual archive/keep audit logging. |
+
+### Deployment notes
+
+- Production was relaunched on `2026-06-17` at commit `4f5fb8d`.
+- Flux migrations `002_account_mailbox_scope.sql`, `003_mail_categories_and_resolution.sql`, and `004_mail_action_log.sql` were applied to project `mailpilot-ai`.
+- Flux CLI reported a checksum conflict for the pre-existing baseline `001_mailpilot_init.sql`, so the pending migration files were applied individually. The database is migrated, but those single-file applications were not recorded in the Flux migration ledger.
+- Production web container rebuilt healthy; `mailpilot-runner` restarted active.
+- `/etc/mailpilot/runner.env` now includes `NEXT_PUBLIC_FLUX_URL` so runner health checks and processing use Flux rather than falling back to legacy Supabase env.
+
+### Current shipped behavior
+
+- New policy default keeps newsletters/promotions/receipts in inbox as unresolved unless legacy auto-archive is enabled.
+- Cleanup groups unresolved, non-archived processed mail by safety tier.
+- Manual **Archive** removes `INBOX` via Gmail, updates `processed_emails.resolution_status='archived'`, and writes `mail_action_log.action_taken='cleanup_archive'`.
+- Manual **Keep** updates `processed_emails.resolution_status='kept'`, keeps Gmail labels/inbox unchanged, and writes `mail_action_log.action_taken='cleanup_keep'`.
+- Audit foundation exists for manual Cleanup actions only. Full audit UI, explain panels, undo audit logging, preferences, and automation are not implemented yet.
+
+### Remaining work
+
+- Phase E: `mail_preferences`, teach endpoints/UI, broad-preference validation, preference-aware resolver, and `archive_blocked` logging.
+- Phase F: `GET /api/action-log`, Activity audit filters/explain panels, blocked/archive copy, and `undo_archive` logging with `resolution_status` updates.
+- Phase G: user-approved scoped automation only, hard-stop module fully active, fail-closed action-log requirement before automatic archive, and legacy auto-archive removal/default-off cleanup.

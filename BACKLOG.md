@@ -8,6 +8,18 @@ Follow-ups that should survive Cursor sessions and chat history. Prefer tracking
 
 ## Web dashboard (`mailpilot-web`)
 
+### Phase 9 scoped inbox resolution: remaining phases E-G
+
+**Context:** Phases A-D are implemented and deployed through commit `4f5fb8d`. Cleanup can manually archive/keep unresolved mail and writes `cleanup_archive` / `cleanup_keep` rows to `mail_action_log`.
+
+**Remaining work:**
+
+- Phase E: add `mail_preferences`, teach endpoints/UI, broad-preference validation, preference-aware resolver behavior, and `archive_blocked` logging.
+- Phase F: add `GET /api/action-log`, Activity audit filters/explain panels, blocked/archive copy, and `undo_archive` logging with `resolution_status` updates.
+- Phase G: enable cautious automation only for user-approved scoped rules, with hard stops and fail-closed action logging before any automatic archive.
+
+**Pointers:** [plans/mailpilot-phase-9-scoped-inbox-resolution.md](plans/mailpilot-phase-9-scoped-inbox-resolution.md), [mailpilot-web/app/dashboard/cleanup/page.tsx](mailpilot-web/app/dashboard/cleanup/page.tsx), [mailpilot-web/app/api/cleanup/actions/route.ts](mailpilot-web/app/api/cleanup/actions/route.ts), [mailpilot-web/lib/cleanup.ts](mailpilot-web/lib/cleanup.ts).
+
 ### Email History: updates when sync runs outside this browser tab
 
 **Context:** After a manual sync from the dashboard, `router.refresh()` runs when the UI sees the same `run_jobs` row go from `pending` / `running` to `done`, so **Email History** refetches without a full page reload. That path does **not** run when mail is processed elsewhere (scheduled `run` / `run-once`, another host, another tab that did not drive the job lifecycle, etc.), so history can stay stale until the user navigates or reloads.
