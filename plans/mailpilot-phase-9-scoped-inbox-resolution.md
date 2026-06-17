@@ -1,7 +1,7 @@
 # MailPilot Phase 9 — Scoped Inbox Resolution
 
 > Follow-up to [`mailpilot-phase-7-8-showcase-closure.md`](mailpilot-phase-7-8-showcase-closure.md) (UI showcase complete).
-> **Status:** Phases A-E implemented; Phase F in progress; Phase G remains.
+> **Status:** Phases A-F implemented; Phase G remains.
 > **Revision:** 2026-06-17 — Phase D reconciliation after deployment.
 
 **Goal:** MailPilot proposes what is safe to clear; the user teaches scoped rules per mailbox; security-sensitive mail never auto-archives by default.
@@ -648,7 +648,7 @@ Auto-archive **only when ALL true**:
 | C | Categories + PolicyResolver + dry-run preview | done |
 | D | Cleanup + action log foundation | done |
 | E | Teach + preferences + archive_blocked logging | done |
-| F | Audit UI, explain, undo logging | in progress |
+| F | Audit UI, explain, undo logging | done |
 | G | Cautious automation | pending |
 
 ### Implemented commits
@@ -659,7 +659,8 @@ Auto-archive **only when ALL true**:
 | B | `68bd8b1` | Account mailbox scope columns, scope API, account UI scope controls. |
 | C | `8fdcdcb` | `mail_categories`, `PolicyResolver`, dry-run previews, legacy auto-archive flag, settings category defaults. |
 | D | `4f5fb8d` | `mail_action_log`, Cleanup page, cleanup candidate/action APIs, manual archive/keep audit logging. |
-| E | (pending commit) | `mail_preferences`, teach/preferences APIs, Activity teach menu, runner hard stops + `archive_blocked` logging. |
+| E | `edf296e` | `mail_preferences`, teach/preferences APIs, Activity teach menu, runner hard stops + `archive_blocked` logging. |
+| F | (pending commit) | `GET /api/action-log`, Activity audit tab, resolution badges, `undo_archive` audit logging. |
 
 ### Deployment notes
 

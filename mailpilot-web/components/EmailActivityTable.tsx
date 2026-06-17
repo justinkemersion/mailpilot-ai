@@ -25,6 +25,10 @@ import {
   truncateText,
   type ProcessedEmailRow,
 } from "@/lib/emailActivity";
+import {
+  resolutionBadgeClass,
+  resolutionStatusLabel,
+} from "@/lib/resolutionPresentation";
 import { formatMailpilotDateUtc } from "@/lib/formatMailpilotDate";
 import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
@@ -513,6 +517,14 @@ function ActivityMobileRow({
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <CategoryPill category={row.category} />
+            {row.resolution_status === "blocked" ||
+            row.resolution_status === "needs_attention" ? (
+              <span
+                className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium ${resolutionBadgeClass(row.resolution_status)}`}
+              >
+                {resolutionStatusLabel(row.resolution_status)}
+              </span>
+            ) : null}
           </div>
           {row.subject ? (
             <p
@@ -716,7 +728,17 @@ function ActivityDesktopRow({
         </div>
       </td>
       <td className="px-3 py-2.5 whitespace-nowrap sm:px-4">
-        <CategoryPill category={row.category} />
+        <div className="flex flex-col gap-1">
+          <CategoryPill category={row.category} />
+          {row.resolution_status === "blocked" ||
+          row.resolution_status === "needs_attention" ? (
+            <span
+              className={`inline-flex w-fit rounded-full border px-2 py-0.5 text-[10px] font-medium ${resolutionBadgeClass(row.resolution_status)}`}
+            >
+              {resolutionStatusLabel(row.resolution_status)}
+            </span>
+          ) : null}
+        </div>
       </td>
       <td className="min-w-0 px-3 py-2.5 sm:px-4">
         <ActivityActionChips actions={row.actions_taken} />

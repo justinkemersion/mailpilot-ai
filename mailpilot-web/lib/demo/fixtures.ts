@@ -1,3 +1,4 @@
+import type { MailActionLogRow } from "@/lib/actionLogTypes";
 import type { RunJobRow } from "@/app/api/run/route";
 import type {
   ConnectedAccount,
@@ -687,4 +688,106 @@ export function getDemoClassificationNote(
 ): string | null {
   const note = (row as DemoEmail).classification_note;
   return note ?? null;
+}
+
+export const DEMO_ACTION_LOG: MailActionLogRow[] = [
+  {
+    id: 5001,
+    user_id: "demo-user",
+    account_id: 2,
+    processed_email_id: 101,
+    gmail_message_id: "demo-msg-101",
+    gmail_thread_id: null,
+    category_id: null,
+    preference_id: null,
+    action_taken: "archive_blocked",
+    reason_json: {
+      account_email: "chris@acmecorp.io",
+      account_purpose: "work_delivery",
+      category_slug: "important",
+      matched_preference_id: 42,
+      intended_policy: "archive",
+      policy_applied: "never_archive",
+      safety_tier: "never_auto",
+      hard_stop_checked: true,
+      block_reason: "hard_stop_password_changed",
+      summary:
+        "Matched your work sign-in archive rule, but did not archive because the message mentioned password recovery.",
+    },
+    previous_state_json: {
+      resolution_status: "unresolved",
+      inbox_status: "in_inbox",
+      subject: "Security alert: new sign-in to your Google Account",
+    },
+    created_at: "2026-06-09T14:25:00.000Z",
+    accounts: { email: "chris@acmecorp.io" },
+  },
+  {
+    id: 5002,
+    user_id: "demo-user",
+    account_id: 1,
+    processed_email_id: 106,
+    gmail_message_id: "demo-msg-106",
+    gmail_thread_id: null,
+    category_id: null,
+    preference_id: 11,
+    action_taken: "teach",
+    reason_json: {
+      account_email: "chris.personal@gmail.com",
+      account_purpose: "personal",
+      category_slug: "receipts",
+      matched_preference_id: 11,
+      policy_applied: "archive",
+      summary: "Taught MailPilot to archive similar mail when approved in chris.personal@gmail.com.",
+    },
+    previous_state_json: null,
+    created_at: "2026-06-08T22:15:00.000Z",
+    accounts: { email: "chris.personal@gmail.com" },
+  },
+  {
+    id: 5003,
+    user_id: "demo-user",
+    account_id: 1,
+    processed_email_id: 108,
+    gmail_message_id: "demo-msg-108",
+    gmail_thread_id: null,
+    category_id: null,
+    preference_id: null,
+    action_taken: "cleanup_archive",
+    reason_json: {
+      account_email: "chris.personal@gmail.com",
+      account_purpose: "personal",
+      category_slug: "newsletters",
+      policy_applied: "archive",
+      safety_tier: "safe_auto",
+      summary: "Archived manually from Cleanup.",
+    },
+    previous_state_json: {
+      resolution_status: "unresolved",
+      inbox_status: "in_inbox",
+    },
+    created_at: "2026-06-08T18:00:00.000Z",
+    accounts: { email: "chris.personal@gmail.com" },
+  },
+];
+
+export function getDemoActionLogPage(options: {
+  offset: number;
+  limit: number;
+  actionFilter: string | null;
+  blockedOnly: boolean;
+}): { rows: MailActionLogRow[]; total: number; offset: number; limit: number } {
+  let filtered = [...DEMO_ACTION_LOG];
+  if (options.blockedOnly) {
+    filtered = filtered.filter((row) => row.action_taken === "archive_blocked");
+  } else if (options.actionFilter) {
+    filtered = filtered.filter((row) => row.action_taken === options.actionFilter);
+  }
+  const { offset, limit } = options;
+  return {
+    rows: filtered.slice(offset, offset + limit),
+    total: filtered.length,
+    offset,
+    limit,
+  };
 }

@@ -1,4 +1,4 @@
-import { EmailActivityTable } from "@/components/EmailActivityTable";
+import { ActivityPageContent } from "@/components/ActivityPageContent";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
   getDashboardMetrics,
@@ -25,11 +25,10 @@ export default async function ActivityPage() {
           Search and filter processed mail, then load more to browse your full history.
         </p>
       </div>
-      <EmailActivityTable
+      <ActivityPageContent
         initialRows={activity.rows}
         initialTotal={activity.total}
         pageSize={activity.limit}
-        paginate
         categoryCounts={metrics.by_category}
         totalCount={metrics.total_processed}
       />

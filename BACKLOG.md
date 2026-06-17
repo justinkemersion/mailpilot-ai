@@ -8,16 +8,15 @@ Follow-ups that should survive Cursor sessions and chat history. Prefer tracking
 
 ## Web dashboard (`mailpilot-web`)
 
-### Phase 9 scoped inbox resolution: remaining phases F-G
+### Phase 9 scoped inbox resolution: Phase G only
 
-**Context:** Phases A-E are implemented (commit pending deploy). Cleanup resolves mail manually; teach saves scoped preferences; runner logs `archive_blocked` when a taught rule matches but hard stops block.
+**Context:** Phases A-F are implemented (commits `edf296e` and pending F deploy). Activity includes an audit trail tab; undo writes `undo_archive` rows and restores resolution state.
 
 **Remaining work:**
 
-- Phase F: add `GET /api/action-log`, Activity audit filters/explain panels, blocked/archive copy, and `undo_archive` logging with `resolution_status` updates.
 - Phase G: enable cautious automation only for user-approved scoped rules, with hard stops and fail-closed action logging before any automatic archive.
 
-**Pointers:** [plans/mailpilot-phase-9-scoped-inbox-resolution.md](plans/mailpilot-phase-9-scoped-inbox-resolution.md), [mailpilot-web/app/api/messages/[processed_email_id]/teach/route.ts](mailpilot-web/app/api/messages/[processed_email_id]/teach/route.ts), [mailpilot-web/app/api/preferences/route.ts](mailpilot-web/app/api/preferences/route.ts), [mailpilot-web/lib/preferenceGuard.ts](mailpilot-web/lib/preferenceGuard.ts).
+**Pointers:** [plans/mailpilot-phase-9-scoped-inbox-resolution.md](plans/mailpilot-phase-9-scoped-inbox-resolution.md), [mailpilot-web/app/api/action-log/route.ts](mailpilot-web/app/api/action-log/route.ts), [mailpilot-web/components/ActionLogTable.tsx](mailpilot-web/components/ActionLogTable.tsx).
 
 ### Email History: updates when sync runs outside this browser tab
 

@@ -22,6 +22,7 @@ export {
   DEMO_PREFERENCES,
   DEMO_PROCESSED_EMAILS,
   DEMO_SYNC_RUNS,
+  getDemoActionLogPage,
   getDemoClassificationNote,
   getDemoConnectedAccounts,
   getDemoCleanupGroups,

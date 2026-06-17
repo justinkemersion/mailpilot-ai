@@ -1,3 +1,4 @@
+import { buildReasonJson } from "@/lib/actionLog";
 import { getCurrentUser } from "@/lib/auth/session";
 import { blockIfDemoMode, isDemoRequest } from "@/lib/demo";
 import { fluxJson, postgrestParams } from "@/lib/flux/client";
@@ -12,18 +13,31 @@ interface StoredTokenJson {
 interface ProcessedEmailJoined {
   id: number;
   gmail_message_id: string;
+  gmail_thread_id: string | null;
   account_id: number;
   user_id: string;
+  category: string;
+  category_id: number | null;
+  subject: string | null;
+  sender: string | null;
   actions_taken: string | null;
   applied_label_names: string | null;
+  was_archived: boolean;
+  resolution_status: string | null;
+  inbox_status: string | null;
+  proposed_action: string | null;
   accounts:
     | {
         token_json: string;
         user_id: string;
+        email: string;
+        purpose: string | null;
       }
     | {
         token_json: string;
         user_id: string;
+        email: string;
+        purpose: string | null;
       }[];
 }
 
@@ -125,7 +139,7 @@ export async function POST(request: Request) {
       `/processed_emails${postgrestParams([
         [
           "select",
-          "id,gmail_message_id,account_id,user_id,actions_taken,applied_label_names,accounts!inner(token_json,user_id)",
+          "id,gmail_message_id,gmail_thread_id,account_id,user_id,category,category_id,subject,sender,actions_taken,applied_label_names,was_archived,resolution_status,inbox_status,proposed_action,accounts!inner(token_json,user_id,email,purpose)",
         ],
         ["id", `eq.${processed_email_id}`],
         ["user_id", `eq.${user.id}`],
@@ -225,6 +239,12 @@ export async function POST(request: Request) {
 
   const prevActions = (pe.actions_taken ?? "").trim();
   const newActions = prevActions ? `${prevActions} [UNDONE]` : "[UNDONE]";
+  const restoredResolution =
+    pe.was_archived || (pe.actions_taken ?? "").toLowerCase().includes("archived")
+      ? "unresolved"
+      : pe.resolution_status === "archived"
+        ? "unresolved"
+        : "kept";
 
   try {
     await fluxJson(
@@ -235,11 +255,52 @@ export async function POST(request: Request) {
       ])}`,
       {
         method: "PATCH",
-        json: { actions_taken: newActions },
+        json: {
+          actions_taken: newActions,
+          was_archived: false,
+          resolution_status: restoredResolution,
+          inbox_status: "in_inbox",
+        },
       }
     );
   } catch (err) {
     console.error("Failed to mark row as undone:", err);
+  }
+
+  try {
+    await fluxJson("/mail_action_log", {
+      method: "POST",
+      json: [
+        {
+          user_id: user.id,
+          account_id: pe.account_id,
+          processed_email_id: pe.id,
+          gmail_message_id: pe.gmail_message_id,
+          gmail_thread_id: pe.gmail_thread_id,
+          category_id: pe.category_id,
+          preference_id: null,
+          action_taken: "undo_archive",
+          reason_json: buildReasonJson({
+            account_email: accountRow.email ?? null,
+            account_purpose: accountRow.purpose ?? "other",
+            category_slug: pe.category,
+            policy_applied: "keep_inbox",
+            summary: "Restored INBOX and removed MailPilot label changes where Gmail allowed.",
+          }),
+          previous_state_json: {
+            resolution_status: pe.resolution_status ?? "archived",
+            inbox_status: pe.inbox_status ?? "archived",
+            was_archived: pe.was_archived,
+            actions_taken: pe.actions_taken,
+            proposed_action: pe.proposed_action,
+            subject: pe.subject,
+            sender: pe.sender,
+          },
+        },
+      ],
+    });
+  } catch (err) {
+    console.error("undo action log:", err);
   }
 
   return NextResponse.json({ ok: true });
