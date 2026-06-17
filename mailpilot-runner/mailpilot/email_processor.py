@@ -20,6 +20,7 @@ from .config import (
     get_archive_receipts,
     get_classifier_info,
     get_gmail_max_messages_per_account,
+    get_legacy_auto_archive,
     get_max_archives_per_run,
     get_max_classifications_per_account,
     get_max_classifications_per_run,
@@ -29,6 +30,12 @@ from .config import (
     get_processing_claim_ttl_seconds,
     get_safe_sender_domains,
     get_safe_senders,
+)
+from .policy_resolver import (
+    build_policy_preview,
+    resolve_policy,
+    resolution_status_for,
+    should_archive,
 )
 from .persistence import (
     RunJobRepository,
@@ -149,6 +156,8 @@ class AppliedActionSummary:
     actions_taken: str
     was_archived: bool
     label_names: list[str]
+    proposed_action: str = "keep_inbox"
+    resolution_status: str = "kept"
 
 
 @dataclass
@@ -175,6 +184,7 @@ class RunResult:
     ai_label: str = ""
     labeled_not_archived_by_category: dict[str, int] = field(default_factory=dict)
     archive_policy_env: dict[str, bool | int] = field(default_factory=dict)
+    policy_previews: list[dict[str, str]] = field(default_factory=list)
 
 
 class EmailProcessor:
@@ -220,6 +230,7 @@ class EmailProcessor:
         self._dry_run = False
         self._search_query = search_query
         self._archive_receipts = get_archive_receipts()
+        self._legacy_auto_archive = get_legacy_auto_archive()
         # Preload safe sender configuration from environment.
         self._safe_sender_domains = set(get_safe_sender_domains())
         self._safe_senders = set(get_safe_senders())
@@ -229,6 +240,7 @@ class EmailProcessor:
         self._ai_limit_message: str | None = None
         self._account_budget_hits_reported: set[str] = set()
         self._labeled_not_archived_by_category: dict[str, int] = {}
+        self._policy_previews: list[dict[str, str]] = []
         self._run_job_id = run_job_id
         self._run_job_repo = run_job_repo
         classifier_info = get_classifier_info()
@@ -401,6 +413,7 @@ class EmailProcessor:
         self._ai_limit_message = None
         self._account_budget_hits_reported = set()
         self._labeled_not_archived_by_category = {}
+        self._policy_previews = []
         archive_policy_env = get_archive_policy_env_snapshot()
         logger.info("Archive policy env snapshot: %s", archive_policy_env)
         with repository_context() as (account_repo, processed_repo):
@@ -428,6 +441,7 @@ class EmailProcessor:
                     ai_label=self._ai_label,
                     labeled_not_archived_by_category={},
                     archive_policy_env=archive_policy_env,
+                    policy_previews=[],
                 )
 
             self._report_progress(
@@ -464,7 +478,29 @@ class EmailProcessor:
             ai_label=self._ai_label,
             labeled_not_archived_by_category=dict(self._labeled_not_archived_by_category),
             archive_policy_env=archive_policy_env,
+            policy_previews=list(self._policy_previews),
         )
+
+    def _record_policy_preview(
+        self, account: Account, category: str, is_safe_sender: bool
+    ) -> None:
+        preview = build_policy_preview(
+            category,
+            account,
+            is_safe_sender=is_safe_sender,
+            archive_receipts=self._archive_receipts,
+            legacy_auto_archive=self._legacy_auto_archive,
+        )
+        if preview is not None:
+            self._policy_previews.append(preview.as_dict())
+            logger.info(
+                "Policy preview %s @ %s: current=%s new=%s (%s)",
+                category,
+                account.email,
+                preview.current_behavior,
+                preview.new_policy,
+                preview.reason,
+            )
 
     def _record_labeled_not_archived(self, category: str, summary: AppliedActionSummary) -> None:
         if summary.was_archived or not summary.label_names:
@@ -631,6 +667,7 @@ class EmailProcessor:
                     continue
 
                 try:
+                    self._record_policy_preview(account, classification.category, is_safe)
                     summary = self._apply_actions(
                         account=account,
                         msg_id=msg.id,
@@ -649,6 +686,9 @@ class EmailProcessor:
                     _actions_taken_for_storage(classification.category, summary),
                     summary.was_archived,
                     applied_json,
+                    proposed_action=summary.proposed_action,
+                    resolution_status=summary.resolution_status,
+                    inbox_status="archived" if summary.was_archived else "in_inbox",
                 )
                 self._record_labeled_not_archived(classification.category, summary)
                 self._messages_processed_this_run += 1
@@ -690,15 +730,32 @@ class EmailProcessor:
         add_names: list[str] = []
         undo_names: set[str] = set()
         was_archived = False
+        resolved = resolve_policy(category, account)
+        want_archive = should_archive(
+            resolved,
+            category,
+            is_safe_sender=is_safe_sender,
+            archive_receipts=self._archive_receipts,
+            legacy_auto_archive=self._legacy_auto_archive,
+        )
 
         if self._dry_run:
             logger.info(
-                "DRY-RUN: would apply actions for message %s in account %s with category %s",
+                "DRY-RUN: would apply actions for message %s in account %s "
+                "category=%s policy=%s archive=%s",
                 msg_id,
                 account.email,
                 category,
+                resolved.action,
+                want_archive,
             )
-            return AppliedActionSummary("", False, [])
+            return AppliedActionSummary(
+                "",
+                False,
+                [],
+                proposed_action=resolved.action,
+                resolution_status=resolution_status_for(resolved, was_archived=False),
+            )
 
         if self._label_actions_this_run >= self._max_label_actions_per_run:
             logger.warning(
@@ -714,6 +771,28 @@ class EmailProcessor:
                 add_ids.append(lid)
                 add_names.append(label_name)
 
+        def _maybe_archive() -> None:
+            nonlocal was_archived
+            if is_safe_sender:
+                logger.info(
+                    "Safe sender %s; skipping archive for message %s",
+                    category,
+                    msg_id,
+                )
+                return
+            if not want_archive:
+                return
+            if self._archives_this_run >= self._max_archives_per_run:
+                logger.warning(
+                    "Archive limit reached (%s); skipping archive for %s",
+                    self._max_archives_per_run,
+                    msg_id,
+                )
+                return
+            self._gmail_client.archive_message(account, msg_id)
+            self._archives_this_run += 1
+            was_archived = True
+
         if category == "important":
             _maybe_add("mailpilot/important")
             self._gmail_client.flag_important(account, msg_id)
@@ -722,50 +801,15 @@ class EmailProcessor:
             _maybe_add("work")
         elif category == "receipts":
             _maybe_add("receipts")
-            if (
-                self._archive_receipts
-                and not is_safe_sender
-                and self._archives_this_run < self._max_archives_per_run
-            ):
-                self._gmail_client.archive_message(account, msg_id)
-                self._archives_this_run += 1
-                was_archived = True
+            _maybe_archive()
         elif category == "newsletters":
             _maybe_add("newsletters")
             if noise_type == "security":
                 _maybe_add("security")
-            if is_safe_sender:
-                logger.info(
-                    "Safe sender newsletter %s; skipping archive",
-                    msg_id,
-                )
-            elif self._archives_this_run < self._max_archives_per_run:
-                self._gmail_client.archive_message(account, msg_id)
-                self._archives_this_run += 1
-                was_archived = True
-            else:
-                logger.warning(
-                    "Archive limit reached (%s); skipping archive for %s",
-                    self._max_archives_per_run,
-                    msg_id,
-                )
+            _maybe_archive()
         elif category == "promotions":
             _maybe_add("promotions")
-            if is_safe_sender:
-                logger.info(
-                    "Safe sender promotion %s; skipping archive",
-                    msg_id,
-                )
-            elif self._archives_this_run < self._max_archives_per_run:
-                self._gmail_client.archive_message(account, msg_id)
-                self._archives_this_run += 1
-                was_archived = True
-            else:
-                logger.warning(
-                    "Archive limit reached (%s); skipping archive for %s",
-                    self._max_archives_per_run,
-                    msg_id,
-                )
+            _maybe_archive()
         elif category == "personal":
             _maybe_add("personal")
         elif category == "spam":
@@ -799,6 +843,10 @@ class EmailProcessor:
                     self._summarize_actions(undo_names, was_archived),
                     was_archived,
                     sorted(undo_names),
+                    proposed_action=resolved.action,
+                    resolution_status=resolution_status_for(
+                        resolved, was_archived=was_archived
+                    ),
                 )
             self._gmail_client.apply_labels(
                 account, msg_id, labels_to_add=add_ids, labels_to_remove=None
@@ -807,4 +855,10 @@ class EmailProcessor:
             undo_names.update(add_names)
 
         text = self._summarize_actions(undo_names, was_archived)
-        return AppliedActionSummary(text, was_archived, sorted(undo_names))
+        return AppliedActionSummary(
+            text,
+            was_archived,
+            sorted(undo_names),
+            proposed_action=resolved.action,
+            resolution_status=resolution_status_for(resolved, was_archived=was_archived),
+        )

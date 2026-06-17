@@ -156,7 +156,9 @@ class InMemoryProcessedEmailRepository:
         actions_taken: str,
         was_archived: bool,
         applied_label_names: str | None,
+        **metadata: Any,
     ) -> None:
+        del metadata
         pe = self._by_id.get(processed_email_id)
         if not pe:
             return

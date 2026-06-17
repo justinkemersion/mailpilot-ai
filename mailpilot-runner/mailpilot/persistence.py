@@ -252,14 +252,25 @@ class SupabaseProcessedEmailRepository:
         actions_taken: str,
         was_archived: bool,
         applied_label_names: str | None,
+        *,
+        proposed_action: str | None = None,
+        resolution_status: str | None = None,
+        inbox_status: str | None = None,
     ) -> None:
-        self._client.table("processed_emails").update(
-            {
-                "actions_taken": actions_taken,
-                "was_archived": was_archived,
-                "applied_label_names": applied_label_names,
-            }
-        ).eq("id", processed_email_id).execute()
+        payload: dict[str, Any] = {
+            "actions_taken": actions_taken,
+            "was_archived": was_archived,
+            "applied_label_names": applied_label_names,
+        }
+        if proposed_action is not None:
+            payload["proposed_action"] = proposed_action
+        if resolution_status is not None:
+            payload["resolution_status"] = resolution_status
+        if inbox_status is not None:
+            payload["inbox_status"] = inbox_status
+        self._client.table("processed_emails").update(payload).eq(
+            "id", processed_email_id
+        ).execute()
 
     def mark_undone(self, processed_email_id: int) -> None:
         res = (

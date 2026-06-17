@@ -405,10 +405,22 @@ def get_archive_policy_env_snapshot() -> dict[str, bool | int]:
     return {
         "archive_receipts": get_archive_receipts(),
         "archive_security_noise": get_archive_security_noise(),
+        "legacy_auto_archive": get_legacy_auto_archive(),
         "max_archives_per_run": get_max_archives_per_run(),
         "max_label_actions_per_run": get_max_label_actions_per_run(),
         "max_spam_marks_per_run": get_max_spam_marks_per_run(),
     }
+
+
+def get_legacy_auto_archive() -> bool:
+    """
+    When True, newsletters and promotions keep pre–Phase 9 auto-archive behavior.
+
+    Set MAILPILOT_LEGACY_AUTO_ARCHIVE=1 during transition; default off (Phase 9C+).
+    """
+    _load_dotenv()
+    raw = os.getenv("MAILPILOT_LEGACY_AUTO_ARCHIVE", "0").lower()
+    return raw in ("1", "true", "yes")
 
 
 def load_flux_credentials() -> tuple[str, str, str]:

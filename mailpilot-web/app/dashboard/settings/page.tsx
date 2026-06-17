@@ -1,8 +1,8 @@
 import { DemoPreferencesPanel } from "@/components/DemoPreferencesPanel";
+import { SettingsCategoriesPanel } from "@/components/SettingsCategoriesPanel";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { getCurrentUser } from "@/lib/auth/session";
 import { DEMO_PREFERENCES, isDemoUser } from "@/lib/demo";
-import { Settings } from "lucide-react";
 import { redirect } from "next/navigation";
 
 export default async function SettingsPage() {
@@ -20,18 +20,13 @@ export default async function SettingsPage() {
         <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
           {demo
             ? "Preview preference memory with sample overrides."
-            : "Account and automation preferences will appear here."}
+            : "Category defaults and mailbox scope for inbox resolution."}
         </p>
       </div>
       {demo ? (
         <DemoPreferencesPanel preferences={DEMO_PREFERENCES} />
       ) : (
-        <EmptyState
-          variant="inline"
-          icon={Settings}
-          title="Settings coming soon"
-          description="Classifier configuration and runner preferences will be surfaced here when available."
-        />
+        <SettingsCategoriesPanel />
       )}
     </section>
   );

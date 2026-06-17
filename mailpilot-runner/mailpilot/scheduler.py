@@ -98,6 +98,7 @@ def _run_result_to_dict(result: RunResult) -> dict[str, Any]:
         "accounts_needing_reauth": list(result.accounts_needing_reauth),
         "labeled_not_archived_by_category": dict(result.labeled_not_archived_by_category),
         "archive_policy_env": dict(result.archive_policy_env),
+        "policy_previews": list(result.policy_previews),
     }
 
 

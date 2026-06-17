@@ -59,7 +59,8 @@ def _dummy_account() -> Account:
     )
 
 
-def test_apply_actions_for_newsletters_archives_and_labels():
+def test_apply_actions_for_newsletters_archives_and_labels(monkeypatch):
+    monkeypatch.setenv("MAILPILOT_LEGACY_AUTO_ARCHIVE", "1")
     dummy_gmail = DummyGmailClient()
     processor = EmailProcessor(gmail_client=dummy_gmail, classifier=DummyClassifier("newsletters"))
     account = _dummy_account()
@@ -75,6 +76,25 @@ def test_apply_actions_for_newsletters_archives_and_labels():
     )
 
     assert dummy_gmail.archived == [(account.email, "msg-1")]
+    assert any("LBL_NEWS" in call["add"] for call in dummy_gmail.applied)
+
+
+def test_apply_actions_for_newsletters_keeps_inbox_without_legacy(monkeypatch):
+    monkeypatch.setenv("MAILPILOT_LEGACY_AUTO_ARCHIVE", "0")
+    dummy_gmail = DummyGmailClient()
+    processor = EmailProcessor(gmail_client=dummy_gmail, classifier=DummyClassifier("newsletters"))
+    account = _dummy_account()
+    labels_map = {"newsletters": "LBL_NEWS"}
+
+    processor._apply_actions(  # type: ignore[attr-defined]
+        account=account,
+        msg_id="msg-1",
+        labels_map=labels_map,
+        category="newsletters",
+        is_safe_sender=False,
+    )
+
+    assert dummy_gmail.archived == []
     assert any("LBL_NEWS" in call["add"] for call in dummy_gmail.applied)
 
 

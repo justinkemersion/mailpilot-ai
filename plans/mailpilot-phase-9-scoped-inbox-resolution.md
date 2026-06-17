@@ -642,9 +642,9 @@ Auto-archive **only when ALL true**:
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| A | Baseline instrumentation | pending |
-| B | Mailbox scopes on accounts | pending |
-| C | Categories + PolicyResolver + dry-run preview | pending |
+| A | Baseline instrumentation | done |
+| B | Mailbox scopes on accounts | done |
+| C | Categories + PolicyResolver + dry-run preview | done |
 | D | Cleanup + action log foundation | pending |
 | E | Teach + preferences + archive_blocked logging | pending |
 | F | Audit UI, explain, undo logging | pending |

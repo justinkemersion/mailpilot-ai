@@ -88,6 +88,7 @@ def test_rate_limiting_archives_per_run(monkeypatch):
     """
     Verify that archive actions are capped per run while labels still apply.
     """
+    monkeypatch.setenv("MAILPILOT_LEGACY_AUTO_ARCHIVE", "1")
     acc_repo = InMemoryAccountRepository()
     acc_repo.add(email="user@example.com", token_json="{}")
     proc_repo = InMemoryProcessedEmailRepository()
@@ -114,6 +115,7 @@ def test_rate_limiting_archives_for_many_promotions(monkeypatch):
     """
     monkeypatch.setenv("MAILPILOT_MAX_CLASSIFICATIONS_PER_RUN", "200")
     monkeypatch.setenv("MAILPILOT_MAX_CLASSIFICATIONS_PER_ACCOUNT", "200")
+    monkeypatch.setenv("MAILPILOT_LEGACY_AUTO_ARCHIVE", "1")
 
     acc_repo = InMemoryAccountRepository()
     acc_repo.add(email="user@example.com", token_json="{}")
