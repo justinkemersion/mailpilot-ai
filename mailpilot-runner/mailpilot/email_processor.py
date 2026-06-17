@@ -16,6 +16,7 @@ from .ai_classifier import (
     create_classifier,
 )
 from .config import (
+    get_archive_policy_env_snapshot,
     get_archive_receipts,
     get_classifier_info,
     get_gmail_max_messages_per_account,
@@ -172,6 +173,8 @@ class RunResult:
     ai_provider: str = ""
     ai_model: str = ""
     ai_label: str = ""
+    labeled_not_archived_by_category: dict[str, int] = field(default_factory=dict)
+    archive_policy_env: dict[str, bool | int] = field(default_factory=dict)
 
 
 class EmailProcessor:
@@ -225,6 +228,7 @@ class EmailProcessor:
         self._ai_limit_hit = False
         self._ai_limit_message: str | None = None
         self._account_budget_hits_reported: set[str] = set()
+        self._labeled_not_archived_by_category: dict[str, int] = {}
         self._run_job_id = run_job_id
         self._run_job_repo = run_job_repo
         classifier_info = get_classifier_info()
@@ -396,6 +400,9 @@ class EmailProcessor:
         self._ai_limit_hit = False
         self._ai_limit_message = None
         self._account_budget_hits_reported = set()
+        self._labeled_not_archived_by_category = {}
+        archive_policy_env = get_archive_policy_env_snapshot()
+        logger.info("Archive policy env snapshot: %s", archive_policy_env)
         with repository_context() as (account_repo, processed_repo):
             accounts = account_repo.list_active(user_id=user_id)
             if not accounts:
@@ -419,6 +426,8 @@ class EmailProcessor:
                     ai_provider=self._ai_provider,
                     ai_model=self._ai_model,
                     ai_label=self._ai_label,
+                    labeled_not_archived_by_category={},
+                    archive_policy_env=archive_policy_env,
                 )
 
             self._report_progress(
@@ -453,6 +462,15 @@ class EmailProcessor:
             ai_provider=self._ai_provider,
             ai_model=self._ai_model,
             ai_label=self._ai_label,
+            labeled_not_archived_by_category=dict(self._labeled_not_archived_by_category),
+            archive_policy_env=archive_policy_env,
+        )
+
+    def _record_labeled_not_archived(self, category: str, summary: AppliedActionSummary) -> None:
+        if summary.was_archived or not summary.label_names:
+            return
+        self._labeled_not_archived_by_category[category] = (
+            self._labeled_not_archived_by_category.get(category, 0) + 1
         )
 
     def _process_account(
@@ -627,6 +645,7 @@ class EmailProcessor:
                     summary.was_archived,
                     applied_json,
                 )
+                self._record_labeled_not_archived(classification.category, summary)
                 self._messages_processed_this_run += 1
                 handled_new += 1
                 if handled_new % 7 == 0:

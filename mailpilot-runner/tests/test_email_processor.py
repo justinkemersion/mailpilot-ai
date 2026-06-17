@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
-from mailpilot.email_processor import EmailProcessor
+from mailpilot.config import get_archive_policy_env_snapshot
+from mailpilot.email_processor import AppliedActionSummary, EmailProcessor
 from mailpilot.models import Account
 
 
@@ -94,4 +95,26 @@ def test_apply_actions_for_important_flags_and_labels():
 
     assert dummy_gmail.flagged == [(account.email, "msg-2")]
     assert any("LBL_MP_IMP" in call["add"] for call in dummy_gmail.applied)
+
+
+def test_record_labeled_not_archived_counts_labels_without_archive():
+    processor = EmailProcessor(gmail_client=DummyGmailClient(), classifier=DummyClassifier("work"))
+    summary = AppliedActionSummary(
+        actions_taken="Labeled: work",
+        was_archived=False,
+        label_names=["work"],
+    )
+    processor._record_labeled_not_archived("work", summary)  # type: ignore[attr-defined]
+    assert processor._labeled_not_archived_by_category == {"work": 1}  # type: ignore[attr-defined]
+
+    archived = AppliedActionSummary("Archived", True, ["newsletters"])
+    processor._record_labeled_not_archived("newsletters", archived)  # type: ignore[attr-defined]
+    assert processor._labeled_not_archived_by_category == {"work": 1}  # type: ignore[attr-defined]
+
+
+def test_archive_policy_env_snapshot_keys():
+    snap = get_archive_policy_env_snapshot()
+    assert "archive_receipts" in snap
+    assert "archive_security_noise" in snap
+    assert "max_archives_per_run" in snap
 

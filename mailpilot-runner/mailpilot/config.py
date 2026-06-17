@@ -396,6 +396,21 @@ def get_archive_receipts() -> bool:
     return raw in ("1", "true", "yes")
 
 
+def get_archive_policy_env_snapshot() -> dict[str, bool | int]:
+    """
+    Snapshot of runner env flags that affect archive/label behavior.
+
+    Logged in run results during Phase 9 baseline instrumentation and policy transition.
+    """
+    return {
+        "archive_receipts": get_archive_receipts(),
+        "archive_security_noise": get_archive_security_noise(),
+        "max_archives_per_run": get_max_archives_per_run(),
+        "max_label_actions_per_run": get_max_label_actions_per_run(),
+        "max_spam_marks_per_run": get_max_spam_marks_per_run(),
+    }
+
+
 def load_flux_credentials() -> tuple[str, str, str]:
     """
     Return (FLUX_API_URL, FLUX_SERVICE_TOKEN, FLUX_POSTGREST_SCHEMA).
