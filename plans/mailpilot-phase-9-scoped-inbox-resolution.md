@@ -661,7 +661,7 @@ Auto-archive **only when ALL true**:
 | D | `4f5fb8d` | `mail_action_log`, Cleanup page, cleanup candidate/action APIs, manual archive/keep audit logging. |
 | E | `edf296e` | `mail_preferences`, teach/preferences APIs, Activity teach menu, runner hard stops + `archive_blocked` logging. |
 | F | `436b9d9` | `GET /api/action-log`, Activity audit tab, resolution badges, `undo_archive` audit logging. |
-| G | (pending commit) | Preference-driven auto-archive with fail-closed action log; `work_device_sign_in` label path. |
+| G | `2d6ed17` | Preference-driven auto-archive with fail-closed `archive` action log; `work_device_sign_in` processor path. |
 
 ### Deployment notes
 
