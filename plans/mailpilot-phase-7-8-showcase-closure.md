@@ -1,6 +1,7 @@
 # MailPilot Phases 7–8 — Showcase Closure
 
 > Follow-up to [`mailpilot-phase-6-visual-polish.md`](mailpilot-phase-6-visual-polish.md) (6A–6E complete).
+> **Status:** Complete — deployed with `c85803e`.
 
 **Goal:** Finish deferred showcase items — login parity with dashboard chrome, lightweight live freshness, TopBar sync navigation, and verification/docs closure. No API/schema/OAuth/runner changes.
 
