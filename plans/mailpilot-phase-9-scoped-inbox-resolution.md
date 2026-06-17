@@ -662,7 +662,7 @@ Auto-archive **only when ALL true**:
 | E | `edf296e` | `mail_preferences`, teach/preferences APIs, Activity teach menu, runner hard stops + `archive_blocked` logging. |
 | F | `436b9d9` | `GET /api/action-log`, Activity audit tab, resolution badges, `undo_archive` audit logging. |
 | G | `2d6ed17` | Preference-driven auto-archive with fail-closed `archive` action log; `work_device_sign_in` processor path. |
-| H | (pending commit) | Teach backfill + `teach_revert`, transparent 500-row scan metadata, Activity mailbox sort. |
+| H | `a1a764f` | Teach backfill + `teach_revert`, transparent 500-row scan metadata, Activity mailbox sort. |
 
 ### Deployment notes
 
