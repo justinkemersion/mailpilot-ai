@@ -1,7 +1,7 @@
 # MailPilot Phase 9 — Scoped Inbox Resolution
 
 > Follow-up to [`mailpilot-phase-7-8-showcase-closure.md`](mailpilot-phase-7-8-showcase-closure.md) (UI showcase complete).
-> **Status:** Phases A-D implemented, committed, pushed, and deployed; Phases E-G remain.
+> **Status:** Phases A-E implemented; Phase F in progress; Phase G remains.
 > **Revision:** 2026-06-17 — Phase D reconciliation after deployment.
 
 **Goal:** MailPilot proposes what is safe to clear; the user teaches scoped rules per mailbox; security-sensitive mail never auto-archives by default.
@@ -647,8 +647,8 @@ Auto-archive **only when ALL true**:
 | B | Mailbox scopes on accounts | done |
 | C | Categories + PolicyResolver + dry-run preview | done |
 | D | Cleanup + action log foundation | done |
-| E | Teach + preferences + archive_blocked logging | pending |
-| F | Audit UI, explain, undo logging | pending |
+| E | Teach + preferences + archive_blocked logging | done |
+| F | Audit UI, explain, undo logging | in progress |
 | G | Cautious automation | pending |
 
 ### Implemented commits
@@ -659,10 +659,12 @@ Auto-archive **only when ALL true**:
 | B | `68bd8b1` | Account mailbox scope columns, scope API, account UI scope controls. |
 | C | `8fdcdcb` | `mail_categories`, `PolicyResolver`, dry-run previews, legacy auto-archive flag, settings category defaults. |
 | D | `4f5fb8d` | `mail_action_log`, Cleanup page, cleanup candidate/action APIs, manual archive/keep audit logging. |
+| E | (pending commit) | `mail_preferences`, teach/preferences APIs, Activity teach menu, runner hard stops + `archive_blocked` logging. |
 
 ### Deployment notes
 
-- Production was relaunched on `2026-06-17` at commit `4f5fb8d`.
+- Production was relaunched on `2026-06-17` at commit `4f5fb8d` (through Phase D).
+- Phase E requires Flux `005_mail_preferences.sql` and Supabase `20260617150000_add_mail_preferences.sql`.
 - Flux migrations `002_account_mailbox_scope.sql`, `003_mail_categories_and_resolution.sql`, and `004_mail_action_log.sql` were applied to project `mailpilot-ai`.
 - Flux CLI reported a checksum conflict for the pre-existing baseline `001_mailpilot_init.sql`, so the pending migration files were applied individually. The database is migrated, but those single-file applications were not recorded in the Flux migration ledger.
 - Production web container rebuilt healthy; `mailpilot-runner` restarted active.
@@ -674,10 +676,11 @@ Auto-archive **only when ALL true**:
 - Cleanup groups unresolved, non-archived processed mail by safety tier.
 - Manual **Archive** removes `INBOX` via Gmail, updates `processed_emails.resolution_status='archived'`, and writes `mail_action_log.action_taken='cleanup_archive'`.
 - Manual **Keep** updates `processed_emails.resolution_status='kept'`, keeps Gmail labels/inbox unchanged, and writes `mail_action_log.action_taken='cleanup_keep'`.
-- Audit foundation exists for manual Cleanup actions only. Full audit UI, explain panels, undo audit logging, preferences, and automation are not implemented yet.
+- **Teach** on Activity saves composite `mail_preferences` per mailbox and logs `teach` rows.
+- Runner logs `archive_blocked` when a user archive preference matches but a hard stop blocks (automation still deferred to Phase G).
+- Full audit UI, explain panels, and undo audit logging remain Phase F work.
 
 ### Remaining work
 
-- Phase E: `mail_preferences`, teach endpoints/UI, broad-preference validation, preference-aware resolver, and `archive_blocked` logging.
 - Phase F: `GET /api/action-log`, Activity audit filters/explain panels, blocked/archive copy, and `undo_archive` logging with `resolution_status` updates.
 - Phase G: user-approved scoped automation only, hard-stop module fully active, fail-closed action-log requirement before automatic archive, and legacy auto-archive removal/default-off cleanup.

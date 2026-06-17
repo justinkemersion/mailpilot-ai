@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from mailpilot.config import get_archive_policy_env_snapshot
 from mailpilot.email_processor import AppliedActionSummary, EmailProcessor
 from mailpilot.models import Account
+from mailpilot.policy_resolver import resolve_policy
 
 
 @dataclass
@@ -73,6 +74,7 @@ def test_apply_actions_for_newsletters_archives_and_labels(monkeypatch):
         labels_map=labels_map,
         category="newsletters",
         is_safe_sender=False,
+        resolved=resolve_policy("newsletters", account),
     )
 
     assert dummy_gmail.archived == [(account.email, "msg-1")]
@@ -92,6 +94,7 @@ def test_apply_actions_for_newsletters_keeps_inbox_without_legacy(monkeypatch):
         labels_map=labels_map,
         category="newsletters",
         is_safe_sender=False,
+        resolved=resolve_policy("newsletters", account),
     )
 
     assert dummy_gmail.archived == []
@@ -111,6 +114,7 @@ def test_apply_actions_for_important_flags_and_labels():
         labels_map=labels_map,
         category="important",
         is_safe_sender=False,
+        resolved=resolve_policy("important", account),
     )
 
     assert dummy_gmail.flagged == [(account.email, "msg-2")]

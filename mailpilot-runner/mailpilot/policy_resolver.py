@@ -83,7 +83,13 @@ def legacy_would_archive(
     return label == "archive"
 
 
-def resolve_policy(category: str, account: Account) -> ResolvedPolicy:
+def resolve_policy(
+    category: str,
+    account: Account,
+    *,
+    matched_preference: object | None = None,
+    hard_stop: object | None = None,
+) -> ResolvedPolicy:
     seed = _seed_for(category)
     action = seed.default_action
     reason = f"{seed.safety_tier} tier default for {seed.slug}"
@@ -97,8 +103,19 @@ def resolve_policy(category: str, account: Account) -> ResolvedPolicy:
             action = "keep_inbox"
             reason = f"account resolution posture is {fallback}"
 
+    pref_action = getattr(matched_preference, "action_policy", None)
+    pref_id = getattr(matched_preference, "id", None)
+    if pref_action:
+        action = str(pref_action)
+        reason = f"matched user preference {pref_id}"
+
+    if hard_stop is not None:
+        if pref_action == "archive" or action == "archive":
+            reason = getattr(hard_stop, "summary", "Hard stop prevented archive")
+        action = "never_archive"
+
     # Account-level archive is never allowed as fallback.
-    if action == "archive":
+    if action == "archive" and not pref_action:
         action = "ask_first"
         reason = "archive requires category override or user preference (not account fallback)"
 
@@ -135,9 +152,12 @@ def resolution_status_for(
     resolved: ResolvedPolicy,
     *,
     was_archived: bool,
+    archive_blocked: bool = False,
 ) -> str:
     if was_archived:
         return "archived"
+    if archive_blocked:
+        return "blocked"
     if resolved.action in ("ask_first", "nudge"):
         return "unresolved"
     if resolved.action == "never_archive":

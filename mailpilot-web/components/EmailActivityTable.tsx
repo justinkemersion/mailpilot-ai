@@ -10,6 +10,10 @@ import {
   UndoActionButton,
   type UndoButtonState,
 } from "@/components/UndoActionButton";
+import {
+  TeachActionMenu,
+  type TeachButtonState,
+} from "@/components/TeachActionMenu";
 import { accountAvatarClass, accountInitial } from "@/lib/accountAvatar";
 import { CATEGORY_ORDER } from "@/lib/categories";
 import {
@@ -40,6 +44,7 @@ interface EmailActivityTableProps {
 }
 
 type UndoStateMap = Record<number, UndoButtonState>;
+type TeachStateMap = Record<number, TeachButtonState>;
 
 async function fetchActivityPage(params: {
   offset: number;
@@ -85,6 +90,7 @@ export function EmailActivityTable({
   const [categoryFilter, setCategoryFilter] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [undoState, setUndoState] = useState<UndoStateMap>({});
+  const [teachState, setTeachState] = useState<TeachStateMap>({});
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingCategory, setLoadingCategory] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -197,6 +203,42 @@ export function EmailActivityTable({
     }
   }
 
+  async function handleTeach(
+    row: ProcessedEmailRow,
+    actionPolicy: "archive" | "never_archive"
+  ) {
+    setTeachState((s) => ({ ...s, [row.id]: "pending" }));
+    try {
+      const res = await fetch(`/api/messages/${row.id}/teach`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_policy: actionPolicy }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        demo?: boolean;
+        message?: string;
+        summary?: string;
+      };
+      if (!res.ok) {
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      setTeachState((s) => ({ ...s, [row.id]: "done" }));
+      setStatusMessage(
+        body.demo
+          ? (body.message ?? "Demo teach simulated.")
+          : (body.summary ?? "Preference saved for this mailbox.")
+      );
+      router.refresh();
+    } catch (err) {
+      console.error("Teach failed:", err);
+      setTeachState((s) => ({ ...s, [row.id]: "error" }));
+      setStatusMessage(
+        err instanceof Error ? err.message : "Could not save preference."
+      );
+    }
+  }
+
   async function handleUndo(row: ProcessedEmailRow) {
     setUndoState((s) => ({ ...s, [row.id]: "pending" }));
     try {
@@ -287,7 +329,10 @@ export function EmailActivityTable({
                 key={row.id}
                 row={row}
                 undoState={undoState[row.id] ?? "idle"}
+                teachState={teachState[row.id] ?? "idle"}
+                showTeach={!isPreview}
                 onUndo={handleUndo}
+                onTeach={handleTeach}
               />
             ))}
           </div>
@@ -356,7 +401,7 @@ export function EmailActivityTable({
                       scope="col"
                       className="w-[14%] px-3 py-2.5 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 sm:px-4"
                     >
-                      Undo
+                      Teach / Undo
                     </th>
                   </tr>
                 </thead>
@@ -366,7 +411,9 @@ export function EmailActivityTable({
                       key={row.id}
                       row={row}
                       undoState={undoState[row.id] ?? "idle"}
+                      teachState={teachState[row.id] ?? "idle"}
                       onUndo={handleUndo}
+                      onTeach={handleTeach}
                     />
                   ))}
                 </tbody>
@@ -410,11 +457,20 @@ export function EmailActivityTable({
 function ActivityMobileRow({
   row,
   undoState,
+  teachState,
+  showTeach,
   onUndo,
+  onTeach,
 }: {
   row: ProcessedEmailRow;
   undoState: UndoButtonState;
+  teachState: TeachButtonState;
+  showTeach: boolean;
   onUndo: (row: ProcessedEmailRow) => void;
+  onTeach: (
+    row: ProcessedEmailRow,
+    actionPolicy: "archive" | "never_archive"
+  ) => void;
 }) {
   const undone = isUndone(row.actions_taken);
   const acctEmail = row.accounts?.email ?? "";
@@ -443,7 +499,17 @@ function ActivityMobileRow({
             >
               {displayName}
             </p>
-            <UndoActionButton row={row} state={undoState} onUndo={onUndo} />
+            <div className="flex shrink-0 items-center gap-1">
+              {showTeach ? (
+                <TeachActionMenu
+                  row={row}
+                  state={teachState}
+                  onTeach={onTeach}
+                  size="compact"
+                />
+              ) : null}
+              <UndoActionButton row={row} state={undoState} onUndo={onUndo} />
+            </div>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <CategoryPill category={row.category} />
@@ -585,11 +651,18 @@ function ActivityActionChips({ actions }: { actions: string | null }) {
 function ActivityDesktopRow({
   row,
   undoState,
+  teachState,
   onUndo,
+  onTeach,
 }: {
   row: ProcessedEmailRow;
   undoState: UndoButtonState;
+  teachState: TeachButtonState;
   onUndo: (row: ProcessedEmailRow) => void;
+  onTeach: (
+    row: ProcessedEmailRow,
+    actionPolicy: "archive" | "never_archive"
+  ) => void;
 }) {
   const undone = isUndone(row.actions_taken);
   const acctEmail = row.accounts?.email ?? "";
@@ -649,12 +722,20 @@ function ActivityDesktopRow({
         <ActivityActionChips actions={row.actions_taken} />
       </td>
       <td className="px-3 py-2.5 whitespace-nowrap sm:px-4">
-        <UndoActionButton
-          row={row}
-          state={undoState}
-          onUndo={onUndo}
-          size="compact"
-        />
+        <div className="flex items-center gap-1">
+          <TeachActionMenu
+            row={row}
+            state={teachState}
+            onTeach={onTeach}
+            size="compact"
+          />
+          <UndoActionButton
+            row={row}
+            state={undoState}
+            onUndo={onUndo}
+            size="compact"
+          />
+        </div>
       </td>
     </tr>
   );

@@ -125,6 +125,38 @@ class SupabaseAccountRepository:
         )
 
 
+class MailPreferenceRepository:
+    def __init__(self, client: object) -> None:
+        self._client = client
+
+    def list_enabled(self, account_id: int) -> list:
+        from .preference_matcher import MailPreference
+
+        res = (
+            self._client.table("mail_preferences")
+            .select("*")
+            .eq("account_id", account_id)
+            .eq("enabled", True)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        out: list[MailPreference] = []
+        for row in res.data or []:
+            out.append(
+                MailPreference(
+                    id=int(row["id"]),
+                    user_id=str(row["user_id"]),
+                    account_id=int(row["account_id"]),
+                    match_type=str(row["match_type"]),
+                    match_conditions_json=dict(row.get("match_conditions_json") or {}),
+                    category_id=int(row["category_id"]) if row.get("category_id") else None,
+                    action_policy=str(row["action_policy"]),
+                    enabled=bool(row.get("enabled", True)),
+                )
+            )
+        return out
+
+
 class SupabaseProcessedEmailRepository:
     def __init__(self, client: object) -> None:
         self._client = client

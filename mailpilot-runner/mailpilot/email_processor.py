@@ -32,17 +32,22 @@ from .config import (
     get_safe_senders,
 )
 from .policy_resolver import (
+    ResolvedPolicy,
     build_policy_preview,
     resolve_policy,
     resolution_status_for,
     should_archive,
 )
+from .action_logger import ActionLogRepository, ProcessedEmailLogContext
 from .persistence import (
+    MailPreferenceRepository,
     RunJobRepository,
     SupabaseAccountRepository,
     SupabaseProcessedEmailRepository,
     repository_context,
 )
+from .preference_matcher import find_matching_preference
+from .security_hard_stops import check_hard_stop
 from .gmail_client import GmailApiError, GmailAuthError, GmailClient, SafeGmailClient
 from .models import Account
 
@@ -417,6 +422,8 @@ class EmailProcessor:
         archive_policy_env = get_archive_policy_env_snapshot()
         logger.info("Archive policy env snapshot: %s", archive_policy_env)
         with repository_context() as (account_repo, processed_repo):
+            preference_repo = MailPreferenceRepository(processed_repo._client)
+            action_log_repo = ActionLogRepository(processed_repo._client)
             accounts = account_repo.list_active(user_id=user_id)
             if not accounts:
                 logger.info("No active accounts configured")
@@ -453,7 +460,9 @@ class EmailProcessor:
                 scope = self._classification_budget_scope(account, 0)
                 if scope in ("run", "ai_limit"):
                     break
-                self._process_account(account, processed_repo)
+                self._process_account(
+                    account, processed_repo, preference_repo, action_log_repo
+                )
 
             self._persist_refreshed_tokens(account_repo)
 
@@ -513,6 +522,8 @@ class EmailProcessor:
         self,
         account: Account,
         processed_repo: SupabaseProcessedEmailRepository,
+        preference_repo: MailPreferenceRepository | None = None,
+        action_log_repo: ActionLogRepository | None = None,
     ) -> None:
         logger.info(
             "Processing account %s (purpose=%s, security_posture=%s)",
@@ -521,6 +532,10 @@ class EmailProcessor:
             account.security_posture,
         )
         self._report_progress("fetching", f"Opening {account.email}…")
+
+        account_preferences = (
+            preference_repo.list_enabled(account.id) if preference_repo else []
+        )
 
         labels_map: dict[str, str] = {}
         if not self._dry_run:
@@ -668,12 +683,53 @@ class EmailProcessor:
 
                 try:
                     self._record_policy_preview(account, classification.category, is_safe)
+                    stored_sender = _sender_for_storage(msg.sender)
+                    matched_pref = find_matching_preference(
+                        account_preferences,
+                        category=classification.category,
+                        subject=msg.subject,
+                        sender=stored_sender,
+                    )
+                    hard_stop = check_hard_stop(msg.subject, stored_sender)
+                    archive_blocked = (
+                        matched_pref is not None
+                        and matched_pref.action_policy == "archive"
+                        and hard_stop is not None
+                    )
+                    if archive_blocked and action_log_repo is not None and matched_pref:
+                        action_log_repo.log_archive_blocked(
+                            account=account,
+                            context=ProcessedEmailLogContext(
+                                processed_email_id=pe.id,
+                                gmail_message_id=msg.id,
+                                gmail_thread_id=msg.thread_id,
+                                category_id=None,
+                                resolution_status="unresolved",
+                                inbox_status="in_inbox",
+                                was_archived=False,
+                                actions_taken=None,
+                                proposed_action=None,
+                                subject=msg.subject,
+                                sender=stored_sender,
+                            ),
+                            preference=matched_pref,
+                            hard_stop=hard_stop,
+                            category=classification.category,
+                        )
+                    resolved = resolve_policy(
+                        classification.category,
+                        account,
+                        matched_preference=matched_pref,
+                        hard_stop=hard_stop,
+                    )
                     summary = self._apply_actions(
                         account=account,
                         msg_id=msg.id,
                         labels_map=labels_map,
                         category=classification.category,
                         is_safe_sender=is_safe,
+                        resolved=resolved,
+                        archive_blocked=archive_blocked,
                         noise_type=classification.noise_type,
                     )
                 except GmailAuthError as exc:
@@ -724,13 +780,15 @@ class EmailProcessor:
         labels_map: dict[str, str],
         category: str,
         is_safe_sender: bool,
+        resolved: ResolvedPolicy,
+        *,
+        archive_blocked: bool = False,
         noise_type: str | None = None,
     ) -> AppliedActionSummary:
         add_ids: list[str] = []
         add_names: list[str] = []
         undo_names: set[str] = set()
         was_archived = False
-        resolved = resolve_policy(category, account)
         want_archive = should_archive(
             resolved,
             category,
@@ -754,7 +812,9 @@ class EmailProcessor:
                 False,
                 [],
                 proposed_action=resolved.action,
-                resolution_status=resolution_status_for(resolved, was_archived=False),
+                resolution_status=resolution_status_for(
+                    resolved, was_archived=False, archive_blocked=archive_blocked
+                ),
             )
 
         if self._label_actions_this_run >= self._max_label_actions_per_run:
@@ -845,7 +905,7 @@ class EmailProcessor:
                     sorted(undo_names),
                     proposed_action=resolved.action,
                     resolution_status=resolution_status_for(
-                        resolved, was_archived=was_archived
+                        resolved, was_archived=was_archived, archive_blocked=archive_blocked
                     ),
                 )
             self._gmail_client.apply_labels(
@@ -860,5 +920,7 @@ class EmailProcessor:
             was_archived,
             sorted(undo_names),
             proposed_action=resolved.action,
-            resolution_status=resolution_status_for(resolved, was_archived=was_archived),
+            resolution_status=resolution_status_for(
+                resolved, was_archived=was_archived, archive_blocked=archive_blocked
+            ),
         )
