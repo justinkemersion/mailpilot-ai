@@ -666,13 +666,12 @@ Auto-archive **only when ALL true**:
 
 ### Deployment notes
 
-- Production was relaunched on `2026-06-17` at commit `4f5fb8d` (through Phase D).
+- Production is at commit `a1a764f` (Phase H) as of `2026-06-17`; web container healthy, `mailpilot-runner` active.
+- Flux `006_teach_backfill.sql` applied; ledger also has `002`–`005` applied.
 - Phase E requires Flux `005_mail_preferences.sql` and Supabase `20260617150000_add_mail_preferences.sql`.
 - Phase H requires Flux `006_teach_backfill.sql` and Supabase `20260617160000_teach_backfill.sql`.
-- Flux migrations `002_account_mailbox_scope.sql`, `003_mail_categories_and_resolution.sql`, and `004_mail_action_log.sql` were applied to project `mailpilot-ai`.
-- Flux CLI reported a checksum conflict for the pre-existing baseline `001_mailpilot_init.sql`, so the pending migration files were applied individually. The database is migrated, but those single-file applications were not recorded in the Flux migration ledger.
-- Production web container rebuilt healthy; `mailpilot-runner` restarted active.
-- `/etc/mailpilot/runner.env` now includes `NEXT_PUBLIC_FLUX_URL` so runner health checks and processing use Flux rather than falling back to legacy Supabase env.
+- Flux CLI still reports a checksum conflict for baseline `001_mailpilot_init.sql`; apply new migrations individually with `flux push flux/migrations/00N_….sql` when needed.
+- `/etc/mailpilot/runner.env` includes `NEXT_PUBLIC_FLUX_URL` so runner health checks and processing use Flux.
 
 ### Current shipped behavior
 
@@ -687,5 +686,6 @@ Auto-archive **only when ALL true**:
 
 ### Remaining work
 
-- Deploy Phase E–G to production: apply Flux `005_mail_preferences.sql`, rebuild web, restart runner.
 - Optional: remove `MAILPILOT_LEGACY_AUTO_ARCHIVE` entirely after transition period.
+- Optional: mailbox filter on Activity (sort by email is shipped; filter dropdown deferred).
+- Optional: Flux `001` checksum ledger cleanup.
