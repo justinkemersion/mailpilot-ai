@@ -48,6 +48,51 @@ CREATE POLICY "accounts: delete own"
     USING (auth.uid() = user_id);
 
 -- ============================================================
+-- mail_categories
+-- System and account-scoped category policy rows.
+-- ============================================================
+CREATE TABLE public.mail_categories (
+    id              BIGSERIAL    PRIMARY KEY,
+    user_id         UUID         NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    account_id      BIGINT       REFERENCES public.accounts(id) ON DELETE CASCADE,
+    slug            TEXT         NOT NULL,
+    name            TEXT         NOT NULL,
+    label_name      TEXT         NOT NULL,
+    default_action  TEXT         NOT NULL DEFAULT 'keep_inbox',
+    safety_tier     TEXT         NOT NULL DEFAULT 'review'
+                                  CHECK (safety_tier IN ('safe_auto', 'review', 'never_auto')),
+    enabled         BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX mail_categories_global_unique_idx
+    ON public.mail_categories (user_id, slug)
+    WHERE account_id IS NULL;
+
+CREATE UNIQUE INDEX mail_categories_account_unique_idx
+    ON public.mail_categories (user_id, account_id, slug)
+    WHERE account_id IS NOT NULL;
+
+ALTER TABLE public.mail_categories ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "mail_categories: select own"
+    ON public.mail_categories FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "mail_categories: insert own"
+    ON public.mail_categories FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "mail_categories: update own"
+    ON public.mail_categories FOR UPDATE
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "mail_categories: delete own"
+    ON public.mail_categories FOR DELETE
+    USING (auth.uid() = user_id);
+
+-- ============================================================
 -- processed_emails
 -- Mirrors mailpilot-runner/mailpilot/database.py ProcessedEmailRepository.
 -- user_id is denormalized here (not only on accounts) so RLS
@@ -69,6 +114,12 @@ CREATE TABLE public.processed_emails (
     actions_taken        TEXT,
     was_archived         BOOLEAN      NOT NULL DEFAULT FALSE,
     applied_label_names  TEXT,
+    proposed_action      TEXT,
+    resolution_status    TEXT         NOT NULL DEFAULT 'unresolved'
+                                      CHECK (resolution_status IN ('unresolved', 'kept', 'archived', 'needs_attention', 'blocked')),
+    inbox_status         TEXT         DEFAULT 'unknown'
+                                      CHECK (inbox_status IN ('in_inbox', 'archived', 'unknown')),
+    category_id          BIGINT       REFERENCES public.mail_categories(id),
     -- Preserves the original SQLite idempotency guarantee.
     UNIQUE(account_id, gmail_message_id)
 );
@@ -90,6 +141,42 @@ CREATE POLICY "emails: update own"
 CREATE POLICY "emails: delete own"
     ON public.processed_emails FOR DELETE
     USING (auth.uid() = user_id);
+
+-- ============================================================
+-- mail_action_log
+-- Append-only audit for labels, cleanup actions, blocked actions, and undo.
+-- ============================================================
+CREATE TABLE public.mail_action_log (
+    id                  BIGSERIAL    PRIMARY KEY,
+    user_id             UUID         NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    account_id          BIGINT       NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
+    processed_email_id  BIGINT       REFERENCES public.processed_emails(id) ON DELETE SET NULL,
+    gmail_message_id    TEXT         NOT NULL,
+    gmail_thread_id     TEXT,
+    category_id         BIGINT       REFERENCES public.mail_categories(id) ON DELETE SET NULL,
+    preference_id       BIGINT,
+    action_taken        TEXT         NOT NULL
+                                       CHECK (action_taken IN ('label', 'archive', 'keep', 'archive_blocked', 'undo_archive', 'teach', 'cleanup_archive', 'cleanup_keep')),
+    reason_json         JSONB        NOT NULL,
+    previous_state_json JSONB,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX mail_action_log_user_created_idx
+    ON public.mail_action_log (user_id, created_at DESC);
+
+CREATE INDEX mail_action_log_account_created_idx
+    ON public.mail_action_log (account_id, created_at DESC);
+
+ALTER TABLE public.mail_action_log ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "mail_action_log: select own"
+    ON public.mail_action_log FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "mail_action_log: insert own"
+    ON public.mail_action_log FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
 
 -- ============================================================
 -- processing_claims

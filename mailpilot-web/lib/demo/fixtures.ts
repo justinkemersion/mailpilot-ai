@@ -6,6 +6,7 @@ import type {
 } from "@/lib/dashboard/queries";
 import type { ProcessedEmailRow } from "@/lib/emailActivity";
 import { CATEGORY_ORDER } from "@/lib/categories";
+import { groupCleanupCandidates, type CleanupGroup } from "@/lib/cleanup";
 
 export interface DemoPreference {
   id: string;
@@ -462,6 +463,17 @@ export const DEMO_PROCESSED_EMAILS: ProcessedEmailRow[] = [
     applied_label_names: '["personal"]',
   }),
 ];
+
+export function getDemoCleanupGroups(): CleanupGroup[] {
+  return groupCleanupCandidates(
+    DEMO_PROCESSED_EMAILS.filter(
+      (row) =>
+        row.was_archived === false &&
+        !((row.actions_taken ?? "").includes("[UNDONE]")) &&
+        (row.resolution_status ?? "unresolved") === "unresolved"
+    ).slice(0, 20)
+  );
+}
 
 export const DEMO_SYNC_RUNS: RunJobRow[] = [
   {

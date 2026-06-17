@@ -4,7 +4,7 @@ import { SignOutButton } from "@/app/dashboard/SignOutButton";
 import { BrandMark } from "@/components/BrandMark";
 import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
-import { Clock, LayoutDashboard, Mail, Settings, X } from "lucide-react";
+import { Archive, Clock, LayoutDashboard, Mail, Settings, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
@@ -12,6 +12,7 @@ import { useEffect, useRef } from "react";
 export const DASHBOARD_NAV = [
   { href: "/dashboard/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/accounts", label: "Accounts", icon: Mail },
+  { href: "/dashboard/cleanup", label: "Cleanup", icon: Archive },
   { href: "/dashboard/activity", label: "Activity", icon: Clock },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ] as const;

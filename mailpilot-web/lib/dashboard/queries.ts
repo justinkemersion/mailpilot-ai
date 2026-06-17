@@ -5,6 +5,7 @@ import {
   OVERVIEW_ACTIVITY_PREVIEW_LIMIT,
   type ProcessedEmailRow,
 } from "@/lib/emailActivity";
+import { groupCleanupCandidates, type CleanupGroup } from "@/lib/cleanup";
 import { CATEGORY_ORDER } from "@/lib/categories";
 import {
   getDemoConnectedAccounts,
@@ -12,6 +13,7 @@ import {
   getDemoEmailActivityPage,
   getDemoLastSyncedByAccount,
   getDemoLatestJob,
+  getDemoCleanupGroups,
   getDemoSyncRunHistory,
   isDemoRequest,
 } from "@/lib/demo";
@@ -195,6 +197,33 @@ export async function getEmailHistoryPreview(
     limit: OVERVIEW_ACTIVITY_PREVIEW_LIMIT,
   });
   return page.rows;
+}
+
+export async function getCleanupCandidateRows(
+  userId: string,
+  limit = 200
+): Promise<ProcessedEmailRow[]> {
+  if (await isDemoRequest()) {
+    return getDemoCleanupGroups().flatMap((group) => group.candidates);
+  }
+
+  return fluxJson<ProcessedEmailRow[]>(
+    `/processed_emails${postgrestParams([
+      ["select", EMAIL_ACTIVITY_SELECT],
+      userFilter(userId),
+      ["resolution_status", "eq.unresolved"],
+      ["was_archived", "eq.false"],
+      ["order", "message_received_at.desc.nullslast"],
+      ["order", "processed_at.desc"],
+      ["limit", Math.min(Math.max(1, limit), 500)],
+    ])}`
+  );
+}
+
+export async function getCleanupGroups(userId: string): Promise<CleanupGroup[]> {
+  if (await isDemoRequest()) return getDemoCleanupGroups();
+  const rows = await getCleanupCandidateRows(userId);
+  return groupCleanupCandidates(rows);
 }
 
 export async function getLatestJob(userId: string): Promise<RunJobRow | null> {

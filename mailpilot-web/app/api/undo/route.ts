@@ -1,7 +1,6 @@
 import { getCurrentUser } from "@/lib/auth/session";
 import { blockIfDemoMode, isDemoRequest } from "@/lib/demo";
 import { fluxJson, postgrestParams } from "@/lib/flux/client";
-import { OAuth2Client } from "google-auth-library";
 import { google } from "googleapis";
 import { NextResponse } from "next/server";
 
@@ -45,7 +44,7 @@ function parseAppliedLabelNames(raw: string | null): string[] {
  * Map stored label names (and system ids) to Gmail label IDs for messages.modify.
  */
 async function resolveRemoveLabelIds(
-  oauth2: OAuth2Client,
+  oauth2: InstanceType<typeof google.auth.OAuth2>,
   labelNames: string[]
 ): Promise<string[]> {
   if (labelNames.length === 0) return [];
@@ -183,7 +182,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const oauth2 = new OAuth2Client(clientId, clientSecret);
+  const oauth2 = new google.auth.OAuth2(clientId, clientSecret);
   oauth2.setCredentials({ refresh_token: refreshToken });
 
   try {

@@ -24,6 +24,7 @@ export {
   DEMO_SYNC_RUNS,
   getDemoClassificationNote,
   getDemoConnectedAccounts,
+  getDemoCleanupGroups,
   getDemoDashboardMetrics,
   getDemoEmailActivityPage,
   getDemoLastSyncedByAccount,
