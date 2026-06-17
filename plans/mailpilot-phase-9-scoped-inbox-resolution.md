@@ -660,7 +660,7 @@ Auto-archive **only when ALL true**:
 | C | `8fdcdcb` | `mail_categories`, `PolicyResolver`, dry-run previews, legacy auto-archive flag, settings category defaults. |
 | D | `4f5fb8d` | `mail_action_log`, Cleanup page, cleanup candidate/action APIs, manual archive/keep audit logging. |
 | E | `edf296e` | `mail_preferences`, teach/preferences APIs, Activity teach menu, runner hard stops + `archive_blocked` logging. |
-| F | (pending commit) | `GET /api/action-log`, Activity audit tab, resolution badges, `undo_archive` audit logging. |
+| F | `436b9d9` | `GET /api/action-log`, Activity audit tab, resolution badges, `undo_archive` audit logging. |
 
 ### Deployment notes
 
