@@ -46,7 +46,7 @@ from .persistence import (
     SupabaseProcessedEmailRepository,
     repository_context,
 )
-from .preference_matcher import find_matching_preference
+from .preference_matcher import MailPreference, find_matching_preference
 from .security_hard_stops import check_hard_stop
 from .gmail_client import GmailApiError, GmailAuthError, GmailClient, SafeGmailClient
 from .models import Account
@@ -696,22 +696,23 @@ class EmailProcessor:
                         and matched_pref.action_policy == "archive"
                         and hard_stop is not None
                     )
+                    log_context = ProcessedEmailLogContext(
+                        processed_email_id=pe.id,
+                        gmail_message_id=msg.id,
+                        gmail_thread_id=msg.thread_id,
+                        category_id=None,
+                        resolution_status="unresolved",
+                        inbox_status="in_inbox",
+                        was_archived=False,
+                        actions_taken=None,
+                        proposed_action=None,
+                        subject=msg.subject,
+                        sender=stored_sender,
+                    )
                     if archive_blocked and action_log_repo is not None and matched_pref:
                         action_log_repo.log_archive_blocked(
                             account=account,
-                            context=ProcessedEmailLogContext(
-                                processed_email_id=pe.id,
-                                gmail_message_id=msg.id,
-                                gmail_thread_id=msg.thread_id,
-                                category_id=None,
-                                resolution_status="unresolved",
-                                inbox_status="in_inbox",
-                                was_archived=False,
-                                actions_taken=None,
-                                proposed_action=None,
-                                subject=msg.subject,
-                                sender=stored_sender,
-                            ),
+                            context=log_context,
                             preference=matched_pref,
                             hard_stop=hard_stop,
                             category=classification.category,
@@ -730,6 +731,9 @@ class EmailProcessor:
                         is_safe_sender=is_safe,
                         resolved=resolved,
                         archive_blocked=archive_blocked,
+                        matched_preference=matched_pref,
+                        action_log_repo=action_log_repo,
+                        log_context=log_context,
                         noise_type=classification.noise_type,
                     )
                 except GmailAuthError as exc:
@@ -783,6 +787,9 @@ class EmailProcessor:
         resolved: ResolvedPolicy,
         *,
         archive_blocked: bool = False,
+        matched_preference: MailPreference | None = None,
+        action_log_repo: ActionLogRepository | None = None,
+        log_context: ProcessedEmailLogContext | None = None,
         noise_type: str | None = None,
     ) -> AppliedActionSummary:
         add_ids: list[str] = []
@@ -792,6 +799,7 @@ class EmailProcessor:
         want_archive = should_archive(
             resolved,
             category,
+            matched_preference=matched_preference,
             is_safe_sender=is_safe_sender,
             archive_receipts=self._archive_receipts,
             legacy_auto_archive=self._legacy_auto_archive,
@@ -849,6 +857,28 @@ class EmailProcessor:
                     msg_id,
                 )
                 return
+            preference_archive = (
+                matched_preference is not None
+                and matched_preference.action_policy == "archive"
+            )
+            if preference_archive:
+                if action_log_repo is None or log_context is None:
+                    logger.warning(
+                        "Fail closed: skipping preference archive for %s (no action log)",
+                        msg_id,
+                    )
+                    return
+                if not action_log_repo.try_log_auto_archive(
+                    account=account,
+                    context=log_context,
+                    preference=matched_preference,
+                    category=category,
+                ):
+                    logger.warning(
+                        "Fail closed: skipping preference archive for %s (log write failed)",
+                        msg_id,
+                    )
+                    return
             self._gmail_client.archive_message(account, msg_id)
             self._archives_this_run += 1
             was_archived = True
@@ -872,6 +902,9 @@ class EmailProcessor:
             _maybe_archive()
         elif category == "personal":
             _maybe_add("personal")
+        elif category == "work_device_sign_in":
+            _maybe_add("security/work-device-sign-in")
+            _maybe_archive()
         elif category == "spam":
             if is_safe_sender:
                 logger.info(

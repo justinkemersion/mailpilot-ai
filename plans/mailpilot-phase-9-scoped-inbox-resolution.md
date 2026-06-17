@@ -1,7 +1,7 @@
 # MailPilot Phase 9 — Scoped Inbox Resolution
 
 > Follow-up to [`mailpilot-phase-7-8-showcase-closure.md`](mailpilot-phase-7-8-showcase-closure.md) (UI showcase complete).
-> **Status:** Phases A-F implemented; Phase G remains.
+> **Status:** Phases A-G implemented; deploy Phase E-G migrations and runner to enable full behavior.
 > **Revision:** 2026-06-17 — Phase D reconciliation after deployment.
 
 **Goal:** MailPilot proposes what is safe to clear; the user teaches scoped rules per mailbox; security-sensitive mail never auto-archives by default.
@@ -649,7 +649,7 @@ Auto-archive **only when ALL true**:
 | D | Cleanup + action log foundation | done |
 | E | Teach + preferences + archive_blocked logging | done |
 | F | Audit UI, explain, undo logging | done |
-| G | Cautious automation | pending |
+| G | Cautious automation | done |
 
 ### Implemented commits
 
@@ -661,6 +661,7 @@ Auto-archive **only when ALL true**:
 | D | `4f5fb8d` | `mail_action_log`, Cleanup page, cleanup candidate/action APIs, manual archive/keep audit logging. |
 | E | `edf296e` | `mail_preferences`, teach/preferences APIs, Activity teach menu, runner hard stops + `archive_blocked` logging. |
 | F | `436b9d9` | `GET /api/action-log`, Activity audit tab, resolution badges, `undo_archive` audit logging. |
+| G | (pending commit) | Preference-driven auto-archive with fail-closed action log; `work_device_sign_in` label path. |
 
 ### Deployment notes
 
@@ -678,10 +679,10 @@ Auto-archive **only when ALL true**:
 - Manual **Archive** removes `INBOX` via Gmail, updates `processed_emails.resolution_status='archived'`, and writes `mail_action_log.action_taken='cleanup_archive'`.
 - Manual **Keep** updates `processed_emails.resolution_status='kept'`, keeps Gmail labels/inbox unchanged, and writes `mail_action_log.action_taken='cleanup_keep'`.
 - **Teach** on Activity saves composite `mail_preferences` per mailbox and logs `teach` rows.
-- Runner logs `archive_blocked` when a user archive preference matches but a hard stop blocks (automation still deferred to Phase G).
-- Full audit UI, explain panels, and undo audit logging remain Phase F work.
+- Runner logs `archive_blocked` when a user archive preference matches but a hard stop blocks.
+- **Phase G (runner):** auto-archive only when a user `archive` preference matches; writes `archive` to `mail_action_log` first (fail closed if log fails). Legacy auto-archive remains opt-in via `MAILPILOT_LEGACY_AUTO_ARCHIVE=0` default.
 
 ### Remaining work
 
-- Phase F: `GET /api/action-log`, Activity audit filters/explain panels, blocked/archive copy, and `undo_archive` logging with `resolution_status` updates.
-- Phase G: user-approved scoped automation only, hard-stop module fully active, fail-closed action-log requirement before automatic archive, and legacy auto-archive removal/default-off cleanup.
+- Deploy Phase E–G to production: apply Flux `005_mail_preferences.sql`, rebuild web, restart runner.
+- Optional: remove `MAILPILOT_LEGACY_AUTO_ARCHIVE` entirely after transition period.

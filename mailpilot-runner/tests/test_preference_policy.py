@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
-from mailpilot.action_logger import ActionLogRepository, ProcessedEmailLogContext
+from mailpilot.action_logger import ActionLogRepository, ProcessedEmailLogContext, ProcessedEmailLogContext
 from mailpilot.models import Account
 from mailpilot.policy_resolver import resolve_policy, should_archive
 from mailpilot.preference_matcher import MailPreference, find_matching_preference
@@ -156,3 +156,96 @@ def test_preference_matcher_isolated_by_account_fields():
         sender="Google <no-reply@accounts.google.com>",
     )
     assert no_match is None
+
+
+def test_work_device_sign_in_preference_auto_archive():
+    from mailpilot.email_processor import EmailProcessor
+    from tests.test_email_processor import DummyGmailClient, _dummy_account
+
+    dummy_gmail = DummyGmailClient()
+    processor = EmailProcessor(gmail_client=dummy_gmail)
+    account = _dummy_account()
+    pref = _pref(pref_id=9, account_id=account.id)
+    resolved = resolve_policy(
+        "work_device_sign_in", account, matched_preference=pref
+    )
+    log_context = ProcessedEmailLogContext(
+        processed_email_id=1,
+        gmail_message_id="msg-signin",
+        gmail_thread_id=None,
+        category_id=None,
+        resolution_status="unresolved",
+        inbox_status="in_inbox",
+        was_archived=False,
+        actions_taken=None,
+        proposed_action=None,
+        subject="New sign-in from Gmail",
+        sender="Google <no-reply@accounts.google.com>",
+    )
+
+    class OkLogger:
+        def __init__(self) -> None:
+            self.rows: list[dict] = []
+
+        def try_log_auto_archive(self, **kwargs):  # type: ignore[no-untyped-def]
+            self.rows.append(kwargs)
+            return True
+
+    logger = OkLogger()
+    summary = processor._apply_actions(  # type: ignore[attr-defined]
+        account=account,
+        msg_id="msg-signin",
+        labels_map={"security/work-device-sign-in": "LBL_SIGNIN"},
+        category="work_device_sign_in",
+        is_safe_sender=False,
+        resolved=resolved,
+        matched_preference=pref,
+        action_log_repo=logger,
+        log_context=log_context,
+    )
+
+    assert dummy_gmail.archived == [(account.email, "msg-signin")]
+    assert summary.was_archived is True
+    assert len(logger.rows) == 1
+
+
+def test_action_log_required_before_auto_archive():
+    from mailpilot.email_processor import EmailProcessor
+    from tests.test_email_processor import DummyGmailClient, _dummy_account
+
+    dummy_gmail = DummyGmailClient()
+    processor = EmailProcessor(gmail_client=dummy_gmail)
+    account = _dummy_account()
+    pref = _pref(pref_id=12, account_id=account.id)
+    resolved = resolve_policy("newsletters", account, matched_preference=pref)
+    log_context = ProcessedEmailLogContext(
+        processed_email_id=2,
+        gmail_message_id="msg-news",
+        gmail_thread_id=None,
+        category_id=None,
+        resolution_status="unresolved",
+        inbox_status="in_inbox",
+        was_archived=False,
+        actions_taken=None,
+        proposed_action=None,
+        subject="Weekly digest",
+        sender="news@example.com",
+    )
+
+    class FailLogger:
+        def try_log_auto_archive(self, **kwargs):  # type: ignore[no-untyped-def]
+            return False
+
+    processor._apply_actions(  # type: ignore[attr-defined]
+        account=account,
+        msg_id="msg-news",
+        labels_map={"newsletters": "LBL_NEWS"},
+        category="newsletters",
+        is_safe_sender=False,
+        resolved=resolved,
+        matched_preference=pref,
+        action_log_repo=FailLogger(),
+        log_context=log_context,
+    )
+
+    assert dummy_gmail.archived == []

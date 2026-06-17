@@ -416,7 +416,8 @@ def get_legacy_auto_archive() -> bool:
     """
     When True, newsletters and promotions keep pre–Phase 9 auto-archive behavior.
 
-    Set MAILPILOT_LEGACY_AUTO_ARCHIVE=1 during transition; default off (Phase 9C+).
+    Set MAILPILOT_LEGACY_AUTO_ARCHIVE=1 only for transitional rollback; default off (Phase 9G).
+    Preference-driven auto-archive does not require this flag.
     """
     _load_dotenv()
     raw = os.getenv("MAILPILOT_LEGACY_AUTO_ARCHIVE", "0").lower()

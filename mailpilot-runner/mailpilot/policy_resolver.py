@@ -131,6 +131,7 @@ def should_archive(
     resolved: ResolvedPolicy,
     category: str,
     *,
+    matched_preference: object | None = None,
     is_safe_sender: bool,
     archive_receipts: bool,
     legacy_auto_archive: bool,
@@ -145,7 +146,11 @@ def should_archive(
         legacy_auto_archive=True,
     ):
         return True
-    return resolved.action == "archive"
+    if resolved.action == "archive":
+        pref_action = getattr(matched_preference, "action_policy", None)
+        pref_id = getattr(matched_preference, "id", None)
+        return pref_action == "archive" and pref_id is not None
+    return False
 
 
 def resolution_status_for(

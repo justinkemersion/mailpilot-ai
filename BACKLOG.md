@@ -8,15 +8,17 @@ Follow-ups that should survive Cursor sessions and chat history. Prefer tracking
 
 ## Web dashboard (`mailpilot-web`)
 
-### Phase 9 scoped inbox resolution: Phase G only
+### Phase 9 scoped inbox resolution — deploy closure
 
-**Context:** Phases A-F are implemented (commits `edf296e` and pending F deploy). Activity includes an audit trail tab; undo writes `undo_archive` rows and restores resolution state.
+**Context:** Phases A–G are implemented on `main`. Flux migrations `001`–`005` are in git; production DB may still need `004`/`005` applied individually (see plan deployment notes).
 
-**Remaining work:**
+**Deploy checklist:**
 
-- Phase G: enable cautious automation only for user-approved scoped rules, with hard stops and fail-closed action logging before any automatic archive.
+- Apply pending Flux SQL migrations (`004_mail_action_log.sql`, `005_mail_preferences.sql`) if not already on the server DB.
+- `git pull` on server, rebuild web container, restart runner per [`deploy/README.md`](deploy/README.md).
+- Confirm `MAILPILOT_LEGACY_AUTO_ARCHIVE` is unset or `0` unless rollback is needed.
 
-**Pointers:** [plans/mailpilot-phase-9-scoped-inbox-resolution.md](plans/mailpilot-phase-9-scoped-inbox-resolution.md), [mailpilot-web/app/api/action-log/route.ts](mailpilot-web/app/api/action-log/route.ts), [mailpilot-web/components/ActionLogTable.tsx](mailpilot-web/components/ActionLogTable.tsx).
+**Pointers:** [plans/mailpilot-phase-9-scoped-inbox-resolution.md](plans/mailpilot-phase-9-scoped-inbox-resolution.md)
 
 ### Email History: updates when sync runs outside this browser tab
 
