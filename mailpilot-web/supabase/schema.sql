@@ -16,6 +16,13 @@ CREATE TABLE public.accounts (
     token_json    TEXT         NOT NULL,
     active        BOOLEAN      NOT NULL DEFAULT TRUE,
     processing_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    purpose       TEXT         NOT NULL DEFAULT 'other'
+                  CHECK (purpose IN ('personal', 'work_delivery', 'business', 'other')),
+    default_archive_policy TEXT NOT NULL DEFAULT 'ask_first'
+                  CHECK (default_archive_policy IN ('keep_inbox', 'ask_first', 'never_archive')),
+    security_posture TEXT      NOT NULL DEFAULT 'standard'
+                  CHECK (security_posture IN ('strict', 'standard', 'relaxed')),
+    scope_configured_at TIMESTAMPTZ,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     -- One Supabase user can only have one row per Gmail address.

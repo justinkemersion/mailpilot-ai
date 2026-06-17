@@ -17,6 +17,13 @@ create table if not exists api.accounts (
   token_json text not null,
   active boolean not null default true,
   processing_enabled boolean not null default true,
+  purpose text not null default 'other'
+    check (purpose in ('personal', 'work_delivery', 'business', 'other')),
+  default_archive_policy text not null default 'ask_first'
+    check (default_archive_policy in ('keep_inbox', 'ask_first', 'never_archive')),
+  security_posture text not null default 'standard'
+    check (security_posture in ('strict', 'standard', 'relaxed')),
+  scope_configured_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint accounts_user_id_email_key unique (user_id, email)

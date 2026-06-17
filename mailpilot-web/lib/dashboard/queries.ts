@@ -16,6 +16,7 @@ import {
   isDemoRequest,
 } from "@/lib/demo";
 import { fluxCount, fluxJson, postgrestParams } from "@/lib/flux/client";
+import type { AccountPurpose, DefaultArchivePolicy, SecurityPosture } from "@/lib/accountScope";
 
 export type { ProcessedEmailRow };
 
@@ -32,6 +33,10 @@ export interface ConnectedAccount {
   display_name: string | null;
   active: boolean;
   processing_enabled: boolean;
+  purpose: AccountPurpose;
+  default_archive_policy: DefaultArchivePolicy;
+  security_posture: SecurityPosture;
+  scope_configured_at: string | null;
 }
 
 export interface DashboardMetrics {
@@ -120,7 +125,10 @@ export async function getConnectedAccounts(
   if (await isDemoRequest()) return getDemoConnectedAccounts();
   const rows = await fluxJson<ConnectedAccount[]>(
     `/accounts${postgrestParams([
-      ["select", "id,email,display_name,active,processing_enabled"],
+      [
+        "select",
+        "id,email,display_name,active,processing_enabled,purpose,default_archive_policy,security_posture,scope_configured_at",
+      ],
       userFilter(userId),
       ["active", "eq.true"],
       ["order", "email.asc"],
@@ -129,6 +137,9 @@ export async function getConnectedAccounts(
   return rows.map((row) => ({
     ...row,
     processing_enabled: row.processing_enabled !== false,
+    purpose: row.purpose ?? "other",
+    default_archive_policy: row.default_archive_policy ?? "ask_first",
+    security_posture: row.security_posture ?? "standard",
   }));
 }
 

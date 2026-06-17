@@ -478,7 +478,12 @@ class EmailProcessor:
         account: Account,
         processed_repo: SupabaseProcessedEmailRepository,
     ) -> None:
-        logger.info("Processing account %s", account.email)
+        logger.info(
+            "Processing account %s (purpose=%s, security_posture=%s)",
+            account.email,
+            account.purpose,
+            account.security_posture,
+        )
         self._report_progress("fetching", f"Opening {account.email}…")
 
         labels_map: dict[str, str] = {}

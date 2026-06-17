@@ -1,7 +1,9 @@
 "use client";
 
+import { AccountScopeFields } from "@/components/AccountScopeFields";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import type { ConnectedAccountItem } from "@/app/dashboard/ConnectedAccountsList";
+import type { AccountPurpose } from "@/lib/accountScope";
 import { accountAvatarClass, accountInitial } from "@/lib/accountAvatar";
 import { formatMailpilotDateUtc } from "@/lib/formatMailpilotDate";
 import { focusRing } from "@/lib/ui";
@@ -14,8 +16,10 @@ interface ConnectedAccountCardProps {
   lastSyncedAt: string | null;
   isPatching: boolean;
   isDeleting: boolean;
+  isScopePatching: boolean;
   onToggle: (enabled: boolean) => void;
   onDisconnect: () => void;
+  onPurposeChange: (purpose: AccountPurpose) => void;
 }
 
 export function ConnectedAccountCard({
@@ -24,10 +28,12 @@ export function ConnectedAccountCard({
   lastSyncedAt,
   isPatching,
   isDeleting,
+  isScopePatching,
   onToggle,
   onDisconnect,
+  onPurposeChange,
 }: ConnectedAccountCardProps) {
-  const controlsDisabled = isPatching || isDeleting;
+  const controlsDisabled = isPatching || isDeleting || isScopePatching;
   const title = account.email;
   const displayName = account.display_name?.trim();
   const showDisplayName =
@@ -136,6 +142,15 @@ export function ConnectedAccountCard({
               )}
             </p>
           </div>
+
+          <AccountScopeFields
+            accountId={account.id}
+            purpose={account.purpose}
+            defaultArchivePolicy={account.default_archive_policy}
+            scopeConfigured={account.scope_configured_at != null}
+            disabled={controlsDisabled}
+            onPurposeChange={onPurposeChange}
+          />
         </div>
       </div>
     </li>

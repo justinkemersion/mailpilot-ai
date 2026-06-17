@@ -15,6 +15,10 @@ class Account:
     created_at: datetime
     updated_at: datetime
     processing_enabled: bool = True
+    purpose: str = "other"
+    default_archive_policy: str = "ask_first"
+    security_posture: str = "standard"
+    scope_configured_at: datetime | None = None
 
 
 @dataclass

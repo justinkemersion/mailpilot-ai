@@ -32,6 +32,10 @@ export const DEMO_ACCOUNTS: ConnectedAccount[] = [
     display_name: "Chris",
     active: true,
     processing_enabled: true,
+    purpose: "personal",
+    default_archive_policy: "ask_first",
+    security_posture: "strict",
+    scope_configured_at: "2026-06-01T10:00:00.000Z",
   },
   {
     id: 2,
@@ -39,6 +43,10 @@ export const DEMO_ACCOUNTS: ConnectedAccount[] = [
     display_name: "Chris (Work)",
     active: true,
     processing_enabled: true,
+    purpose: "work_delivery",
+    default_archive_policy: "ask_first",
+    security_posture: "relaxed",
+    scope_configured_at: "2026-06-01T10:00:00.000Z",
   },
 ];
 

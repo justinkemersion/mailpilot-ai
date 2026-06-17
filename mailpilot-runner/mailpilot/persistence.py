@@ -116,6 +116,12 @@ class SupabaseAccountRepository:
             created_at=_parse_dt(row.get("created_at")),
             updated_at=_parse_dt(row.get("updated_at")),
             processing_enabled=bool(row.get("processing_enabled", True)),
+            purpose=str(row.get("purpose") or "other"),
+            default_archive_policy=str(row.get("default_archive_policy") or "ask_first"),
+            security_posture=str(row.get("security_posture") or "standard"),
+            scope_configured_at=_parse_dt(row["scope_configured_at"])
+            if row.get("scope_configured_at")
+            else None,
         )
 
 
