@@ -29,3 +29,11 @@ Follow-ups that should survive Cursor sessions and chat history. Prefer tracking
 **Partial mitigation (Phase 7):** `AppShell` calls `router.refresh()` when the document becomes visible again — helps when the user returns to the tab but not when sync completes while the tab stays focused.
 
 **Pointers:** [mailpilot-web/components/AppShell.tsx](mailpilot-web/components/AppShell.tsx), [mailpilot-web/app/dashboard/RunSyncControl.tsx](mailpilot-web/app/dashboard/RunSyncControl.tsx), [mailpilot-web/app/dashboard/HistoryTable.tsx](mailpilot-web/app/dashboard/HistoryTable.tsx).
+
+### Mailbox identity (reconnect)
+
+**Rule:** Durable mailbox key is `user_id` + `provider` + `normalized_email` (lowercase trimmed Gmail address). OAuth subject / NextAuth `providerAccountId` is **not** the mailbox identity. `accounts.id` is the FK hub for sync history, scope, rules, and preferences.
+
+**Reconnect:** OAuth callback upserts on that identity and replaces `token_json`. Soft disconnect (`active=false`) preserves the row and dependent data; expired-token disconnect also sets `needs_reauth=true` and clears tokens.
+
+**Migration:** `flux/migrations/007_mailbox_identity.sql` — includes a dry-run CTE (comment block) listing duplicate identity groups before merge.

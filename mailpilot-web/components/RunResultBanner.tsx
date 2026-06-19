@@ -135,9 +135,10 @@ export function RunResultBanner({
           <p className={cn("mt-1 text-sm", bodyClass)}>{summary}</p>
           {disconnectedEmails.length > 0 ? (
             <p className={cn("mt-2 text-sm", bodyClass)}>
-              Removed expired{" "}
+              Disconnected expired{" "}
               {disconnectedEmails.length === 1 ? "connection" : "connections"} for{" "}
-              {disconnectedEmails.join(", ")}. Other accounts stay connected.
+              {disconnectedEmails.join(", ")}. Your history is preserved — reconnect Gmail
+              on Accounts to resume. Other accounts stay connected.
             </p>
           ) : null}
           {reauthEmails.length > 0 ? (

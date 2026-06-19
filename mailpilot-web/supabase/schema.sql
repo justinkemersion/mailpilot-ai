@@ -23,10 +23,14 @@ CREATE TABLE public.accounts (
     security_posture TEXT      NOT NULL DEFAULT 'standard'
                   CHECK (security_posture IN ('strict', 'standard', 'relaxed')),
     scope_configured_at TIMESTAMPTZ,
+    provider      TEXT         NOT NULL DEFAULT 'gmail'
+                  CHECK (provider IN ('gmail')),
+    normalized_email TEXT      NOT NULL,
+    needs_reauth  BOOLEAN      NOT NULL DEFAULT FALSE,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    -- One Supabase user can only have one row per Gmail address.
-    UNIQUE(user_id, email)
+  -- Stable mailbox identity (not OAuth subject): one row per user + provider + normalized email.
+    UNIQUE(user_id, provider, normalized_email)
 );
 
 ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;

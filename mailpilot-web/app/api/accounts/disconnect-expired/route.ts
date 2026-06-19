@@ -1,6 +1,10 @@
 import { getCurrentUser } from "@/lib/auth/session";
 import { getConnectedAccounts } from "@/lib/dashboard/queries";
 import { blockIfDemoMode } from "@/lib/demo";
+import {
+  DISCONNECTED_TOKEN_JSON,
+  normalizeMailboxEmail,
+} from "@/lib/mailboxIdentity";
 import { fluxJson, postgrestParams } from "@/lib/flux/client";
 import { NextResponse } from "next/server";
 
@@ -10,7 +14,7 @@ function normalizeEmails(raw: unknown): string[] {
   const out: string[] = [];
   for (const item of raw) {
     if (typeof item !== "string") continue;
-    const email = item.trim().toLowerCase();
+    const email = normalizeMailboxEmail(item);
     if (!email.includes("@") || seen.has(email)) continue;
     seen.add(email);
     out.push(email);
@@ -21,7 +25,7 @@ function normalizeEmails(raw: unknown): string[] {
 /**
  * POST /api/accounts/disconnect-expired
  * Body: { emails: string[] }
- * Removes linked Gmail rows whose email matches (case-insensitive).
+ * Soft-disconnects linked Gmail rows (preserves history): clears tokens, marks needs_reauth.
  */
 export async function POST(request: Request) {
   const blocked = await blockIfDemoMode();
@@ -51,12 +55,14 @@ export async function POST(request: Request) {
 
   const accounts = await getConnectedAccounts(user.id);
   const requestedSet = new Set(requested);
-  const toRemove = accounts.filter((a) =>
-    requestedSet.has(a.email.trim().toLowerCase())
+  const toDisconnect = accounts.filter((a) =>
+    requestedSet.has(normalizeMailboxEmail(a.email))
   );
 
   const disconnected: string[] = [];
-  for (const account of toRemove) {
+  const updatedAt = new Date().toISOString();
+
+  for (const account of toDisconnect) {
     try {
       const data = await fluxJson<Array<{ id: number; email: string }>>(
         `/accounts${postgrestParams([
@@ -64,13 +70,21 @@ export async function POST(request: Request) {
           ["id", `eq.${account.id}`],
           ["user_id", `eq.${user.id}`],
         ])}`,
-        { method: "DELETE" }
+        {
+          method: "PATCH",
+          json: {
+            active: false,
+            needs_reauth: true,
+            token_json: DISCONNECTED_TOKEN_JSON,
+            updated_at: updatedAt,
+          },
+        }
       );
       if (data[0]?.email) {
         disconnected.push(data[0].email);
       }
     } catch (err) {
-      console.error("disconnect-expired DELETE:", account.id, err);
+      console.error("disconnect-expired PATCH:", account.id, err);
     }
   }
 

@@ -25,7 +25,11 @@ import { RunSyncControl } from "../RunSyncControl";
 export default async function OverviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ connected?: string; error?: string }>;
+  searchParams: Promise<{
+    connected?: string;
+    reconnected?: string;
+    error?: string;
+  }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -44,6 +48,7 @@ export default async function OverviewPage({
 
   const params = await searchParams;
   const justConnected = params.connected === "true";
+  const justReconnected = params.reconnected === "true";
   const connectError = params.error;
   const previewCount = historyPreview.length;
 
@@ -51,7 +56,12 @@ export default async function OverviewPage({
     <div className="space-y-8 sm:space-y-10">
       {demo ? <DemoOverviewCard /> : null}
 
-      {justConnected && !demo ? (
+      {justReconnected && !demo ? (
+        <AlertBanner variant="success">
+          Reconnected existing mailbox. Your sync history and settings were preserved.
+        </AlertBanner>
+      ) : null}
+      {justConnected && !justReconnected && !demo ? (
         <AlertBanner variant="success">
           Gmail account connected successfully.
         </AlertBanner>

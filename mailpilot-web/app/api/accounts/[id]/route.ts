@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/auth/session";
 import { blockIfDemoMode } from "@/lib/demo";
+import { DISCONNECTED_TOKEN_JSON } from "@/lib/mailboxIdentity";
 import { fluxJson, postgrestParams } from "@/lib/flux/client";
 import { NextResponse } from "next/server";
 
@@ -94,7 +95,7 @@ export async function PATCH(
 
 /**
  * DELETE /api/accounts/:id
- * Removes the linked Gmail account row (cascades per schema).
+ * Soft-disconnect: preserves mailbox history; clears OAuth tokens. Reconnect via OAuth restores access.
  */
 export async function DELETE(
   _request: Request,
@@ -122,17 +123,25 @@ export async function DELETE(
         ["id", `eq.${accountId}`],
         ["user_id", `eq.${user.id}`],
       ])}`,
-      { method: "DELETE" }
+      {
+        method: "PATCH",
+        json: {
+          active: false,
+          needs_reauth: false,
+          token_json: DISCONNECTED_TOKEN_JSON,
+          updated_at: new Date().toISOString(),
+        },
+      }
     );
   } catch (err) {
-    console.error("accounts DELETE:", err);
+    console.error("accounts soft-disconnect PATCH:", err);
     return NextResponse.json({ error: "Could not disconnect account" }, { status: 500 });
   }
 
-  const deleted = data[0];
-  if (!deleted) {
+  const disconnected = data[0];
+  if (!disconnected) {
     return NextResponse.json({ error: "Account not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ ok: true as const, id: deleted.id });
+  return NextResponse.json({ ok: true as const, id: disconnected.id });
 }
