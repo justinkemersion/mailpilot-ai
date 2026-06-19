@@ -86,8 +86,10 @@ sudo systemctl restart mailpilot-runner
 Health check (no OpenAI key required for DB-only check):
 
 ```bash
-sudo -u mailpilot /path/to/repo/mailpilot-runner/.venv/bin/python -m mailpilot.main flux-check
+sudo -u mailpilot bash -c 'set -a; source /etc/mailpilot/runner.env; set +a; /path/to/repo/mailpilot-runner/.venv/bin/python -m mailpilot.main flux-check'
 ```
+
+(`flux-check` verifies Flux PostgREST; `supabase-check` is a deprecated hidden alias.)
 
 Environment is loaded from `/etc/mailpilot/runner.env` when run under systemd.
 
