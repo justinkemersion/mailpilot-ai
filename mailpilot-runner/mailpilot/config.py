@@ -33,8 +33,6 @@ def _load_dotenv() -> None:
 @dataclass(frozen=True)
 class MailPilotConfig:
     openai_api_key: str
-    supabase_url: str
-    supabase_service_role_key: str
     poll_interval_seconds: int
     log_level: str
 
@@ -457,37 +455,20 @@ def flux_configured() -> bool:
     return bool(url and token)
 
 
-def load_supabase_credentials() -> tuple[str, str]:
-    """
-    Return (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) for health checks that
-    must not require an OpenAI API key.
-    """
-    _load_dotenv()
-    url = (os.getenv("SUPABASE_URL") or "").strip()
-    key = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
-    if not url or not key:
-        raise RuntimeError(
-            "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required but not set"
-        )
-    return url, key
-
-
 def create_db_client():
     """
-    Return a database client for repositories (Flux PostgREST or Supabase).
+    Return a Flux PostgREST client for repositories.
 
-    Prefers Flux when FLUX_API_URL/NEXT_PUBLIC_FLUX_URL and FLUX_SERVICE_TOKEN are set.
+    MailPilot no longer uses Supabase; Flux is the sole database plane.
     """
-    if flux_configured():
-        from .flux_postgrest import FluxPostgrestClient
+    if not flux_configured():
+        raise RuntimeError(
+            "FLUX_API_URL (or NEXT_PUBLIC_FLUX_URL) and FLUX_SERVICE_TOKEN are required but not set"
+        )
+    from .flux_postgrest import FluxPostgrestClient
 
-        url, token, schema = load_flux_credentials()
-        return FluxPostgrestClient(url, token, schema)
-
-    from supabase import create_client
-
-    supabase_url, supabase_key = load_supabase_credentials()
-    return create_client(supabase_url, supabase_key)
+    url, token, schema = load_flux_credentials()
+    return FluxPostgrestClient(url, token, schema)
 
 
 def load_config() -> MailPilotConfig:
@@ -503,10 +484,10 @@ def load_config() -> MailPilotConfig:
     provider = get_ai_provider()
     openai_api_key = get_openai_api_key() if provider == "openai" else ""
 
-    if flux_configured():
-        supabase_url, supabase_service_role_key = "", ""
-    else:
-        supabase_url, supabase_service_role_key = load_supabase_credentials()
+    if not flux_configured():
+        raise RuntimeError(
+            "FLUX_API_URL (or NEXT_PUBLIC_FLUX_URL) and FLUX_SERVICE_TOKEN are required but not set"
+        )
 
     poll_interval_seconds_raw = os.getenv("MAILPILOT_POLL_INTERVAL_SECONDS", "300")
     try:
@@ -520,8 +501,6 @@ def load_config() -> MailPilotConfig:
 
     return MailPilotConfig(
         openai_api_key=openai_api_key,
-        supabase_url=supabase_url,
-        supabase_service_role_key=supabase_service_role_key,
         poll_interval_seconds=poll_interval_seconds,
         log_level=log_level,
     )

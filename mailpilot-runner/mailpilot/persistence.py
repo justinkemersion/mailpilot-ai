@@ -5,37 +5,37 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any, Iterator
 
-from typing import TYPE_CHECKING
+from .config import create_db_client, load_config
 
-from .config import create_db_client, flux_configured, load_config, load_supabase_credentials
-
-if TYPE_CHECKING:
-    from supabase import Client
 from .models import Account, ProcessedEmail
 
 logger = logging.getLogger(__name__)
 
 
-def check_supabase_connection() -> tuple[bool, str]:
+def check_db_connection() -> tuple[bool, str]:
     """
-    Verify we can reach the configured database and see expected tables.
+    Verify Flux PostgREST credentials and that core tables are reachable.
 
-    Returns (ok, message). Uses Flux when Flux credentials are configured.
+    Returns (ok, message). Does not require an OpenAI API key.
     """
     try:
         client = create_db_client()
     except RuntimeError as exc:
         return False, str(exc)
 
-    backend = "Flux" if flux_configured() else "Supabase"
     try:
         acc = client.table("accounts").select("id").limit(1).execute()
         _ = acc.data
         pe = client.table("processed_emails").select("id").limit(1).execute()
         _ = pe.data
     except Exception as exc:  # noqa: BLE001 — surface any client/network error
-        return False, f"{backend} request failed: {exc}"
-    return True, f"{backend} OK: connected and tables reachable."
+        return False, f"Flux request failed: {exc}"
+    return True, "Flux OK: connected and tables reachable."
+
+
+def check_supabase_connection() -> tuple[bool, str]:
+    """Deprecated alias for ``check_db_connection`` (Supabase is no longer used)."""
+    return check_db_connection()
 
 
 def _parse_dt(value: str | None) -> datetime:
@@ -59,7 +59,7 @@ def _is_unique_violation(exc: Exception) -> bool:
     )
 
 
-class SupabaseAccountRepository:
+class AccountRepository:
     def __init__(self, client: object) -> None:
         self._client = client
 
@@ -157,7 +157,7 @@ class MailPreferenceRepository:
         return out
 
 
-class SupabaseProcessedEmailRepository:
+class ProcessedEmailRepository:
     def __init__(self, client: object) -> None:
         self._client = client
 
@@ -510,10 +510,10 @@ class RunJobRepository:
 
 
 @contextmanager
-def repository_context() -> Iterator[tuple[SupabaseAccountRepository, SupabaseProcessedEmailRepository]]:
+def repository_context() -> Iterator[tuple[AccountRepository, ProcessedEmailRepository]]:
     """
-    Yields (account_repo, processed_repo) backed by Supabase using the service role key.
+    Yields (account_repo, processed_repo) backed by Flux PostgREST.
     """
     _ = load_config()
     client = create_db_client()
-    yield SupabaseAccountRepository(client), SupabaseProcessedEmailRepository(client)
+    yield AccountRepository(client), ProcessedEmailRepository(client)

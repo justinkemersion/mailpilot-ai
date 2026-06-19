@@ -36,8 +36,12 @@ def render_config_error(exc: RuntimeError) -> bool:
         _render_cloudflare_credentials_error()
         return True
 
-    if "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY" in message:
-        _render_supabase_credentials_error()
+    if (
+        "FLUX_SERVICE_TOKEN" in message
+        or "FLUX_API_URL" in message
+        or "NEXT_PUBLIC_FLUX_URL" in message
+    ):
+        _render_flux_credentials_error()
         return True
 
     return False
@@ -73,13 +77,14 @@ def _render_cloudflare_credentials_error() -> None:
     _panel("Missing Cloudflare Workers AI configuration", body)
 
 
-def _render_supabase_credentials_error() -> None:
+def _render_flux_credentials_error() -> None:
     body = (
-        "The worker could not start because Supabase credentials are missing.\n\n"
-        "Set in mailpilot-runner/.env (never commit the service role key):\n"
-        "  SUPABASE_URL=https://<project-ref>.supabase.co\n"
-        "  SUPABASE_SERVICE_ROLE_KEY=<service-role-secret>\n\n"
-        "Use the service role key only on trusted servers (it bypasses RLS).\n"
+        "The worker could not start because Flux database credentials are missing.\n\n"
+        "Set in mailpilot-runner/.env (or /etc/mailpilot/runner.env on the server):\n"
+        "  FLUX_API_URL=https://api--<project>--<hash>.vsl-base.com\n"
+        "  FLUX_SERVICE_TOKEN=<flux-service-token>\n"
+        "  FLUX_POSTGREST_SCHEMA=api\n\n"
+        "Use the same values as mailpilot-web (`flux project credentials`).\n"
         "Gmail accounts are linked via the MailPilot web app, not the CLI.\n"
     )
-    _panel("Missing Supabase configuration", body)
+    _panel("Missing Flux configuration", body)

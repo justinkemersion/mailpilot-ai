@@ -23,7 +23,7 @@ def _echo_run_summary(result: RunResult | None) -> None:
         return
     if result.accounts_processed == 0:
         typer.echo(
-            "No active Gmail accounts in Supabase. Connect Gmail in the MailPilot web app first."
+            "No active Gmail accounts in Flux. Connect Gmail in the MailPilot web app first."
         )
         return
     prefix = "Would have: " if result.dry_run else ""
@@ -201,7 +201,7 @@ def watch_jobs_command(
     """
     Watch for inbox-processing jobs queued from the MailPilot web app.
 
-    Polls Supabase every POLL_INTERVAL seconds for pending run_jobs rows,
+    Polls Flux every POLL_INTERVAL seconds for pending run_jobs rows,
     claims and executes each one, then writes back the result. Run this
     alongside the web app so the 'Process inbox' button works.
 
@@ -216,21 +216,31 @@ def watch_jobs_command(
     watch_jobs(poll_interval=poll_interval)
 
 
-@app.command("supabase-check")
-def supabase_check_command() -> None:
+@app.command("flux-check")
+def flux_check_command() -> None:
     """
-    Verify SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY and that core tables are reachable.
+    Verify Flux PostgREST credentials and that core tables are reachable.
     Does not require an OpenAI API key.
     """
-    from .persistence import check_supabase_connection
+    from .persistence import check_db_connection
 
-    ok, message = check_supabase_connection()
+    ok, message = check_db_connection()
     typer.echo(message)
     if ok:
-        typer.secho("supabase-check: OK", fg=typer.colors.GREEN)
+        typer.secho("flux-check: OK", fg=typer.colors.GREEN)
     else:
-        typer.secho("supabase-check: FAILED", fg=typer.colors.RED)
+        typer.secho("flux-check: FAILED", fg=typer.colors.RED)
         raise typer.Exit(code=1)
+
+
+@app.command("supabase-check", hidden=True)
+def supabase_check_command() -> None:
+    """Deprecated alias — MailPilot uses Flux only; run flux-check instead."""
+    typer.secho(
+        "supabase-check is deprecated (Supabase removed). Running flux-check…",
+        fg=typer.colors.YELLOW,
+    )
+    flux_check_command()
 
 
 @app.command("summarize")
@@ -291,7 +301,7 @@ def history_command(
     undo: bool = typer.Option(False, "--undo", help="Reverse MailPilot actions for matching row(s)."),
 ) -> None:
     """
-    Search processed-email history in Supabase; optionally undo Gmail changes.
+    Search processed-email history in Flux; optionally undo Gmail changes.
     """
     from .persistence import repository_context
     from .gmail_client import GmailApiError, GmailAuthError, GmailClient, SafeGmailClient

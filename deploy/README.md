@@ -86,7 +86,7 @@ sudo systemctl restart mailpilot-runner
 Health check (no OpenAI key required for DB-only check):
 
 ```bash
-sudo -u mailpilot /path/to/repo/mailpilot-runner/.venv/bin/python -m mailpilot.main supabase-check
+sudo -u mailpilot /path/to/repo/mailpilot-runner/.venv/bin/python -m mailpilot.main flux-check
 ```
 
 Environment is loaded from `/etc/mailpilot/runner.env` when run under systemd.

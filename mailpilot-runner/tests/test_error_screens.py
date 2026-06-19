@@ -12,6 +12,8 @@ def _run_main_with_args(monkeypatch, capsys, args, env: dict[str, str]) -> str:
         sys.argv = ["mailpilot.main", *args]
         for key in [
             "OPENAI_API_KEY",
+            "FLUX_API_URL",
+            "FLUX_SERVICE_TOKEN",
             "SUPABASE_URL",
             "SUPABASE_SERVICE_ROLE_KEY",
         ]:
@@ -36,15 +38,15 @@ def test_friendly_error_for_missing_openai_key(monkeypatch, capsys):
         capsys,
         ["run-once"],
         env={
-            "SUPABASE_URL": "http://localhost",
-            "SUPABASE_SERVICE_ROLE_KEY": "x",
+            "FLUX_API_URL": "http://localhost",
+            "FLUX_SERVICE_TOKEN": "x",
         },
     )
     assert "Missing OpenAI API key" in output
     assert "OPENAI_API_KEY" in output
 
 
-def test_friendly_error_for_missing_supabase_credentials(monkeypatch, capsys):
+def test_friendly_error_for_missing_flux_credentials(monkeypatch, capsys):
     output = _run_main_with_args(
         monkeypatch,
         capsys,
@@ -54,5 +56,5 @@ def test_friendly_error_for_missing_supabase_credentials(monkeypatch, capsys):
         },
     )
 
-    assert "Missing Supabase configuration" in output
-    assert "SUPABASE_URL" in output
+    assert "Missing Flux configuration" in output
+    assert "FLUX_API_URL" in output

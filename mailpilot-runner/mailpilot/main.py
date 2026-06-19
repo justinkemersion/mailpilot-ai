@@ -46,8 +46,8 @@ def main() -> None:
     """
     Entrypoint for MailPilot CLI.
     """
-    # supabase-check only needs Supabase URL + service role key, not OpenAI.
-    if len(sys.argv) > 1 and sys.argv[1] == "supabase-check":
+    # flux-check only needs Flux credentials, not OpenAI.
+    if len(sys.argv) > 1 and sys.argv[1] in ("flux-check", "supabase-check"):
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",

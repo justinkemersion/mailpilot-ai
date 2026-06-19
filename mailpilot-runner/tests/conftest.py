@@ -1,11 +1,12 @@
-"""Shared pytest fixtures."""
+"""Shared pytest env — Flux is the sole database plane."""
 
 import pytest
 
 
 @pytest.fixture(autouse=True)
-def _mailpilot_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Minimal env so load_config() and repository_context() can be constructed when not patched."""
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-mailpilot")
-    monkeypatch.setenv("SUPABASE_URL", "http://127.0.0.1:54321")
-    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key")
+def _flux_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FLUX_API_URL", "http://127.0.0.1:54321")
+    monkeypatch.setenv("FLUX_SERVICE_TOKEN", "test-flux-service-token")
+    monkeypatch.setenv("FLUX_POSTGREST_SCHEMA", "api")
+    for key in ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"):
+        monkeypatch.delenv(key, raising=False)

@@ -12,8 +12,6 @@ from typer.testing import CliRunner
 @pytest.fixture
 def _openai_key(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key-for-cli")
-    monkeypatch.setenv("SUPABASE_URL", "http://127.0.0.1:54321")
-    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-svc")
 
 
 def test_history_command_prints_table(_openai_key, monkeypatch):

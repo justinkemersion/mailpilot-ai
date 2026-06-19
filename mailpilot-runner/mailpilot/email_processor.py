@@ -42,8 +42,8 @@ from .action_logger import ActionLogRepository, ProcessedEmailLogContext
 from .persistence import (
     MailPreferenceRepository,
     RunJobRepository,
-    SupabaseAccountRepository,
-    SupabaseProcessedEmailRepository,
+    AccountRepository,
+    ProcessedEmailRepository,
     repository_context,
 )
 from .preference_matcher import MailPreference, find_matching_preference
@@ -385,7 +385,7 @@ class EmailProcessor:
         """
         self._dry_run = True
 
-    def _persist_refreshed_tokens(self, account_repo: SupabaseAccountRepository) -> None:
+    def _persist_refreshed_tokens(self, account_repo: AccountRepository) -> None:
         """Save any OAuth tokens that were auto-refreshed during this run."""
         getter = getattr(self._gmail_client, "get_refreshed_tokens", None)
         if getter is None:
@@ -521,7 +521,7 @@ class EmailProcessor:
     def _process_account(
         self,
         account: Account,
-        processed_repo: SupabaseProcessedEmailRepository,
+        processed_repo: ProcessedEmailRepository,
         preference_repo: MailPreferenceRepository | None = None,
         action_log_repo: ActionLogRepository | None = None,
     ) -> None:

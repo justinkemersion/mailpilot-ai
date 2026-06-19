@@ -663,15 +663,15 @@ Auto-archive **only when ALL true**:
 | F | `436b9d9` | `GET /api/action-log`, Activity audit tab, resolution badges, `undo_archive` audit logging. |
 | G | `2d6ed17` | Preference-driven auto-archive with fail-closed `archive` action log; `work_device_sign_in` processor path. |
 | H | `a1a764f` | Teach backfill + `teach_revert`, transparent 500-row scan metadata, Activity mailbox sort. |
+| I | `23c6d9b` | Mailbox reconnect identity (`007`), soft disconnect, Flux-only runner health (`flux-check`). |
 
 ### Deployment notes
 
-- Production is at commit `a1a764f` (Phase H) as of `2026-06-17`; web container healthy, `mailpilot-runner` active.
-- Flux `006_teach_backfill.sql` applied; ledger also has `002`–`005` applied.
-- Phase E requires Flux `005_mail_preferences.sql` and Supabase `20260617150000_add_mail_preferences.sql`.
-- Phase H requires Flux `006_teach_backfill.sql` and Supabase `20260617160000_teach_backfill.sql`.
-- Flux CLI still reports a checksum conflict for baseline `001_mailpilot_init.sql`; apply new migrations individually with `flux push flux/migrations/00N_….sql` when needed.
-- `/etc/mailpilot/runner.env` includes `NEXT_PUBLIC_FLUX_URL` so runner health checks and processing use Flux.
+- Production is at commit `23c6d9b` (mailbox identity reconnect) as of `2026-06-19`; web container healthy, `mailpilot-runner` active.
+- Flux migrations through `007_mailbox_identity.sql` applied on production (`001`–`007`; apply new files individually via `flux push` when needed).
+- Flux CLI may still report a checksum conflict for baseline `001_mailpilot_init.sql`; apply new migrations individually with `flux push flux/migrations/00N_….sql`.
+- `/etc/mailpilot/runner.env` includes `FLUX_API_URL` / `FLUX_SERVICE_TOKEN` (and often `NEXT_PUBLIC_FLUX_URL`); runner health: `flux-check`.
+- **Supabase is retired** — schema mirror under `mailpilot-web/supabase/` is reference-only; production uses Flux `api` schema only.
 
 ### Current shipped behavior
 
