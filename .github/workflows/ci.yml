@@ -9,6 +9,11 @@ on:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    # The Python package is mailpilot-runner, not the repo root; pyproject.toml,
+    # the ruff config, and the tests all live there.
+    defaults:
+      run:
+        working-directory: mailpilot-runner
     steps:
       - name: Checkout
         uses: actions/checkout@v4

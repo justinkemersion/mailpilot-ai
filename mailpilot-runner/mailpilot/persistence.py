@@ -3,11 +3,14 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator
 
 from .config import create_db_client, load_config
 
 from .models import Account, ProcessedEmail
+
+if TYPE_CHECKING:
+    from .action_logger import ActionLogRepository
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +163,16 @@ class MailPreferenceRepository:
 class ProcessedEmailRepository:
     def __init__(self, client: object) -> None:
         self._client = client
+
+    def preferences(self) -> "MailPreferenceRepository":
+        """Sibling repository over the same client, so callers need not touch `_client`."""
+        return MailPreferenceRepository(self._client)
+
+    def action_log(self) -> "ActionLogRepository":
+        """Sibling repository over the same client, so callers need not touch `_client`."""
+        from .action_logger import ActionLogRepository
+
+        return ActionLogRepository(self._client)
 
     def _fetch_row_dict(
         self, account_id: int, gmail_message_id: str

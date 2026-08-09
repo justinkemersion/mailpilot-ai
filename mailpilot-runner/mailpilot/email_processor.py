@@ -422,8 +422,8 @@ class EmailProcessor:
         archive_policy_env = get_archive_policy_env_snapshot()
         logger.info("Archive policy env snapshot: %s", archive_policy_env)
         with repository_context() as (account_repo, processed_repo):
-            preference_repo = MailPreferenceRepository(processed_repo._client)
-            action_log_repo = ActionLogRepository(processed_repo._client)
+            preference_repo = processed_repo.preferences()
+            action_log_repo = processed_repo.action_log()
             accounts = account_repo.list_active(user_id=user_id)
             if not accounts:
                 logger.info("No active accounts configured")

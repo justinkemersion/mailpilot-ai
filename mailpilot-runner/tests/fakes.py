@@ -8,9 +8,28 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any, Iterator
 
+from mailpilot.action_logger import ActionLogRepository
 from mailpilot.models import Account, ProcessedEmail
 
 _FAKE_USER_ID = "00000000-0000-0000-0000-000000000001"
+
+
+class InMemoryMailPreferenceRepository:
+    def __init__(self, preferences: list[Any] | None = None) -> None:
+        self._preferences = list(preferences or [])
+
+    def list_enabled(self, account_id: int) -> list[Any]:
+        return [p for p in self._preferences if p.account_id == account_id and p.enabled]
+
+
+class InMemoryActionLogRepository(ActionLogRepository):
+    """Keeps the real log_* payload logic; rows land in a list instead of PostgREST."""
+
+    def __init__(self) -> None:
+        self.rows: list[dict[str, Any]] = []
+
+    def insert_row(self, row: dict[str, Any]) -> None:
+        self.rows.append(row)
 
 
 class InMemoryAccountRepository:
@@ -86,6 +105,14 @@ class InMemoryProcessedEmailRepository:
         self._by_id: dict[int, ProcessedEmail] = {}
         self._claims: set[tuple[int, str]] = set()
         self._next_id = 1
+        self.preference_repo = InMemoryMailPreferenceRepository()
+        self.action_log_repo = InMemoryActionLogRepository()
+
+    def preferences(self) -> InMemoryMailPreferenceRepository:
+        return self.preference_repo
+
+    def action_log(self) -> InMemoryActionLogRepository:
+        return self.action_log_repo
 
     def is_processed(self, account_id: int, gmail_message_id: str) -> bool:
         return (account_id, gmail_message_id) in self._rows

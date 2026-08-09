@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
-from mailpilot.action_logger import ActionLogRepository, ProcessedEmailLogContext, ProcessedEmailLogContext
+from mailpilot.action_logger import ActionLogRepository, ProcessedEmailLogContext
 from mailpilot.models import Account
 from mailpilot.policy_resolver import resolve_policy, should_archive
 from mailpilot.preference_matcher import MailPreference, find_matching_preference
